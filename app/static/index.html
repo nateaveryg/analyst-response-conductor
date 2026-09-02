@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Analyst Response Agent (ARA) - A2UI Executive Portal</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Google Sans', sans-serif; background-color: #f8fafd; }
+        .chat-container { height: calc(100vh - 180px); }
+        .a2ui-card { border-left: 4px solid #1a73e8; }
+        .a2ui-violation { border-left: 4px solid #ea4335; }
+        .a2ui-success { border-left: 4px solid #34a853; }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+    </style>
+</head>
+<body class="text-gray-800 flex flex-col h-screen overflow-hidden">
+
+    <!-- Top Navigation Bar -->
+    <header class="bg-white border-b border-gray-200 px-6 py-4 flex items-center justify-between shadow-sm z-10">
+        <div class="flex items-center space-x-3">
+            <div class="bg-blue-600 text-white p-2 rounded-xl flex items-center justify-center font-bold text-xl shadow-md">
+                🎯
+            </div>
+            <div>
+                <h1 class="text-xl font-bold text-gray-900 tracking-tight flex items-center">
+                    Analyst Response Agent (ARA)
+                    <span class="text-xs bg-blue-100 text-blue-700 font-semibold px-2 py-0.5 rounded-full ml-2">A2UI Protocol v0.9</span>
+                    <span id="app-version-badge" class="text-xs bg-emerald-100 text-emerald-800 font-semibold px-2 py-0.5 rounded-full ml-1.5 border border-emerald-200">v2.2.0</span>
+                </h1>
+                <p class="text-xs text-gray-500 font-medium">Universal Analyst Evaluation Portal (Gartner MQ/CC, Forrester Wave, IDC MarketScape)</p>
+            </div>
+        </div>
+        <div class="flex items-center space-x-3">
+            <!-- Interactive Workspace Selector -->
+            <div class="relative flex items-center bg-blue-50/80 border border-blue-200 px-3 py-1.5 rounded-xl shadow-sm">
+                <span class="text-xs font-bold text-gray-700 mr-2">Workspace:</span>
+                <select id="workspace-selector" onchange="switchWorkspace(this.value)" class="bg-transparent text-blue-800 text-xs font-semibold focus:outline-none cursor-pointer">
+                    <option value="" disabled selected>Loading Workspaces...</option>
+                </select>
+                <button onclick="openCreateWorkspaceModal()" title="Create New Analyst Workspace" class="ml-2 bg-white hover:bg-blue-600 text-gray-700 hover:text-white border border-gray-300 px-2.5 py-0.5 rounded-lg text-xs font-semibold shadow-sm transition flex items-center space-x-1">
+                    <span>➕ New</span>
+                </button>
+            </div>
+            <a href="/docs" target="_blank" class="text-xs font-semibold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition">API Swagger Docs</a>
+            <div class="flex items-center space-x-2 bg-green-50 text-green-700 px-3 py-1.5 rounded-lg border border-green-200 text-xs font-semibold">
+                <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                <span>Cloud Run Connected</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 7-Phase Journey Navigation & Progress Header -->
+    <nav id="journey-progress-header" class="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white px-6 py-2.5 flex flex-wrap items-center justify-between text-xs border-b border-indigo-950 shadow-sm z-10 transition-all duration-300">
+        <div class="flex items-center space-x-3">
+            <span class="font-bold tracking-wider uppercase text-blue-300 flex items-center space-x-1.5 text-[11px]">
+                <span class="text-sm">🧭</span>
+                <span>Lifecycle Journey:</span>
+            </span>
+            <span id="journey-step-badge" class="bg-blue-600/80 text-white font-semibold px-2.5 py-0.5 rounded-full border border-blue-400/40 text-[11px] shadow-sm">
+                Step 1 of 7 (14%)
+            </span>
+            <span id="journey-step-name" class="font-bold text-blue-100 truncate max-w-md">
+                Phase 1: Criteria Intake & Governance
+            </span>
+        </div>
+        <div class="flex items-center space-x-4">
+            <!-- Mini Phase Step Breadcrumbs -->
+            <div id="journey-pill-row" class="hidden md:flex items-center space-x-1 text-[10px]">
+                <span id="pill-p1" class="px-2 py-0.5 rounded font-semibold bg-blue-500 text-white">1. Intake</span>
+                <span class="text-gray-500">›</span>
+                <span id="pill-p2" class="px-2 py-0.5 rounded font-semibold bg-gray-800 text-gray-400">2. Assign</span>
+                <span class="text-gray-500">›</span>
+                <span id="pill-p3" class="px-2 py-0.5 rounded font-semibold bg-gray-800 text-gray-400">3. Kickoff</span>
+                <span class="text-gray-500">›</span>
+                <span id="pill-p4" class="px-2 py-0.5 rounded font-semibold bg-gray-800 text-gray-400">4. RFI</span>
+                <span class="text-gray-500">›</span>
+                <span id="pill-p5" class="px-2 py-0.5 rounded font-semibold bg-gray-800 text-gray-400">5. Demo</span>
+                <span class="text-gray-500">›</span>
+                <span id="pill-p6" class="px-2 py-0.5 rounded font-semibold bg-gray-800 text-gray-400">6. Review</span>
+                <span class="text-gray-500">›</span>
+                <span id="pill-p7" class="px-2 py-0.5 rounded font-semibold bg-gray-800 text-gray-400">7. Publish</span>
+            </div>
+            <!-- Dynamic Progress Bar -->
+            <div class="flex items-center space-x-2">
+                <div class="w-32 bg-gray-800/90 rounded-full h-2 overflow-hidden border border-gray-700">
+                    <div id="journey-progress-bar" class="bg-gradient-to-r from-blue-400 to-emerald-400 h-2 rounded-full transition-all duration-500" style="width: 14%;"></div>
+                </div>
+                <span id="journey-percentage-text" class="text-emerald-300 font-mono font-bold text-[11px]">14%</span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Workspace -->
+    <main class="flex-1 flex overflow-hidden max-w-6xl mx-auto w-full p-4 gap-4">
+        
+        <!-- Left / Center: Interactive A2UI Chat Pane -->
+        <section class="flex-1 bg-white border border-gray-200 rounded-2xl shadow-sm flex flex-col overflow-hidden">
+            <div class="border-b border-gray-100 px-5 py-3 flex items-center justify-between bg-gray-50/50">
+                <div class="flex items-center space-x-2">
+                    <span class="text-sm font-semibold text-gray-700">Analyst Evaluation Assistant</span>
+                    <span class="text-xs text-gray-400">| Declarative UI Streaming Active</span>
+                </div>
+                <button onclick="clearChat()" class="text-xs text-gray-400 hover:text-gray-600 underline">Clear Conversation</button>
+            </div>
+
+            <!-- Enterprise Read-Only Banner -->
+            <div id="read-only-banner" class="hidden bg-amber-50 border-b border-amber-200 px-5 py-2.5 flex items-center justify-between text-xs text-amber-800 font-medium transition-all duration-300">
+                <div class="flex items-center space-x-2">
+                    <span class="text-base">🔒</span>
+                    <span><strong>Enterprise Read-Only View:</strong> You have view-only access to this peer analyst workspace. Editing and scorecard calculations are restricted to designated organization co-editor groups.</span>
+                </div>
+                <span class="text-[10px] bg-amber-100 px-2 py-0.5 rounded font-semibold text-amber-900 uppercase">Protected Tenancy</span>
+            </div>
+
+            <!-- Messages Stream -->
+            <div id="chat-messages" class="flex-1 overflow-y-auto p-5 space-y-6">
+                <!-- Initial state placeholder while welcome loads -->
+                <div id="loading-spinner" class="flex items-center justify-center h-full text-gray-400">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-3"></div>
+                    <span class="text-sm">Connecting to A2UI Agent Engine...</span>
+                </div>
+            </div>
+
+            <!-- Quick Action Toolbar -->
+            <div class="bg-gray-50 border-t border-gray-100 px-4 py-2 flex items-center space-x-2 overflow-x-auto">
+                <span class="text-xs text-gray-400 font-medium whitespace-nowrap mr-1">Quick Actions:</span>
+                <button onclick="sendAction('open_intake', 'Open Criteria Intake Form')" class="text-xs bg-white hover:bg-blue-50 border border-gray-200 text-gray-700 hover:text-blue-600 px-3 py-1 rounded-full shadow-2sm font-medium transition whitespace-nowrap">📋 Document Intake Form</button>
+                <button onclick="sendAction('submit_criteria_analysis', 'Run Portfolio Eligibility Scorecard')" class="text-xs bg-white hover:bg-blue-50 border border-gray-200 text-gray-700 hover:text-blue-600 px-3 py-1 rounded-full shadow-2sm font-medium transition whitespace-nowrap">📊 Run Eligibility Scorecard</button>
+                <button onclick="sendAction('deep_dive_analysis', 'View Deep Dive & Export Report')" class="text-xs bg-white hover:bg-blue-50 border border-gray-200 text-gray-700 hover:text-blue-600 px-3 py-1 rounded-full shadow-2sm font-medium transition whitespace-nowrap">🔍 Deep Dive & Export</button>
+                <button onclick="sendAction('draft_leadership_email', 'Draft Executive Leadership Notification Email')" class="text-xs bg-white hover:bg-blue-50 border border-gray-200 text-gray-700 hover:text-blue-600 px-3 py-1 rounded-full shadow-2sm font-medium transition whitespace-nowrap">📧 Draft Leadership Email</button>
+                <button onclick="sendAction('generate_timeline', 'Generate Workback Timeline')" class="text-xs bg-white hover:bg-blue-50 border border-gray-200 text-gray-700 hover:text-blue-600 px-3 py-1 rounded-full shadow-2sm font-medium transition whitespace-nowrap">📅 Workback Schedule</button>
+                <button onclick="sendAction('open_saved_artifacts', 'View & Restore Saved Session Artifacts')" class="text-xs bg-white hover:bg-blue-50 border border-gray-200 text-gray-700 hover:text-blue-600 px-3 py-1 rounded-full shadow-2sm font-medium transition whitespace-nowrap">📂 Saved Artifacts & Session</button>
+                <button onclick="sendAction('save_current_context', 'Save Current Session Snapshot as Artifact')" class="text-xs bg-white hover:bg-blue-50 border border-gray-200 text-gray-700 hover:text-blue-600 px-3 py-1 rounded-full shadow-2sm font-medium transition whitespace-nowrap">💾 Save Snapshot</button>
+            </div>
+
+            <!-- Input Box -->
+            <div class="p-4 border-t border-gray-200 bg-white">
+                <form id="chat-form" onsubmit="handleChatSubmit(event)" class="flex items-center space-x-2">
+                    <input type="text" id="user-input" placeholder="Type a prompt or ask about criteria thresholds..." class="flex-1 bg-gray-50 border border-gray-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition" required>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl text-sm font-semibold shadow-sm transition flex items-center space-x-2">
+                        <span>Send</span>
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                    </button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Right Side: Interactive Saved Artifacts Modal / Sidebar Panel -->
+        <section id="saved-artifacts-modal" class="hidden w-96 bg-white border border-gray-200 rounded-2xl shadow-xl flex flex-col overflow-hidden transition-all duration-300 z-20">
+            <div class="bg-blue-600 text-white px-5 py-4 flex items-center justify-between shadow-sm">
+                <div class="flex items-center space-x-2">
+                    <span class="text-lg">📂</span>
+                    <div>
+                        <h3 class="text-sm font-bold tracking-tight">Saved Artifacts Modal</h3>
+                        <p class="text-[10px] text-blue-100 font-medium">PostgreSQL Database Reports & Snapshots</p>
+                    </div>
+                </div>
+                <button onclick="closeSavedArtifactsModal()" class="text-white hover:text-blue-200 p-1 rounded-lg transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+
+            <div class="p-3 bg-blue-50/50 border-b border-gray-100 flex items-center justify-between text-xs text-gray-600">
+                <span>Persisted in Cloud SQL (`SavedArtifact`)</span>
+                <button onclick="openSavedArtifactsModal()" class="text-blue-600 font-semibold hover:underline flex items-center space-x-1">
+                    <span>🔄 Refresh</span>
+                </button>
+            </div>
+
+            <!-- Artifacts List Container -->
+            <div id="artifacts-list-container" class="flex-1 overflow-y-auto p-4 space-y-4">
+                <div class="flex items-center justify-center h-40 text-gray-400 text-xs">
+                    <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></div>
+                    <span>Loading database reports...</span>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Artifact Preview Popup Modal -->
+    <div id="artifact-preview-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[85vh] flex flex-col overflow-hidden border border-gray-200">
+            <div class="bg-gray-900 text-white px-6 py-4 flex items-center justify-between border-b border-gray-800">
+                <div>
+                    <h3 id="preview-modal-title" class="text-base font-bold">Artifact Preview</h3>
+                    <p id="preview-modal-type" class="text-xs text-gray-400 font-mono"></p>
+                </div>
+                <button onclick="closeArtifactPreviewModal()" class="text-gray-400 hover:text-white p-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 transition">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div id="preview-modal-content" class="p-6 overflow-y-auto flex-1 prose prose-sm max-w-none text-gray-800 leading-relaxed font-sans whitespace-pre-wrap"></div>
+            <div class="bg-gray-50 px-6 py-3 border-t border-gray-200 flex items-center justify-end space-x-3">
+                <button id="preview-copy-btn" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-sm transition flex items-center space-x-1.5">
+                    <span>📋 Copy Full Content to Clipboard</span>
+                </button>
+                <button onclick="closeArtifactPreviewModal()" class="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-xl text-xs font-semibold transition">
+                    Close Preview
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Workspace Modal -->
+    <div id="create-workspace-modal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-6 z-50">
+        <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 border border-gray-200 space-y-4">
+            <div class="flex items-center justify-between border-b border-gray-100 pb-3">
+                <h3 class="text-base font-bold text-gray-900 flex items-center space-x-2"><span class="text-xl">📁</span><span>Create Enterprise Workspace</span></h3>
+                <button onclick="closeCreateWorkspaceModal()" class="text-gray-400 hover:text-gray-600 font-bold text-lg">&times;</button>
+            </div>
+            <form onsubmit="submitCreateWorkspace(event)" class="space-y-4 text-xs text-gray-700">
+                <div>
+                    <label class="block font-bold mb-1">Workspace Name*</label>
+                    <input type="text" id="ws-name-input" required placeholder="e.g., Gartner MQ 2026 - DevOps" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block font-bold mb-1">Report Category*</label>
+                    <input type="text" id="ws-report-input" required placeholder="Gartner Magic Quadrant" class="w-full border border-gray-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block font-bold mb-1">Description</label>
+                    <textarea id="ws-desc-input" rows="2" placeholder="Describe the evaluation target and SKU portfolio..." class="w-full border border-gray-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                </div>
+                <div>
+                    <label class="block font-bold mb-1">Co-Editor Group Emails (JSON Array)</label>
+                    <input type="text" id="ws-editors-input" value='["enterprise-analyst@google.com", "opm-leadership@google.com"]' class="w-full border border-gray-300 rounded-xl px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="flex justify-end space-x-3 pt-2">
+                    <button type="button" onclick="closeCreateWorkspaceModal()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold px-4 py-2 rounded-xl text-xs transition">Cancel</button>
+                    <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-semibold px-5 py-2 rounded-xl text-xs shadow-sm transition">Create & Select</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Embedded A2UI Client Engine & Renderer -->
+    <script>
+        // Store for dynamic form bindings (hardened against prototype pollution)
+        const formContextStore = Object.create(null);
+        let currentWorkspaceId = null;
+        let currentWorkspace = null;
+        let availableWorkspaces = [];
+
+        function safeUpdateContext(source) {
+            if (!source || typeof source !== 'object') return;
+            for (const key of Object.keys(source)) {
+                if (key === '__proto__' || key === 'constructor' || key === 'prototype') continue;
+                formContextStore[key] = source[key];
+            }
+        }
+
+        function updateJourneyUI(phaseNum, stepName, pct) {
+            let phase = parseInt(phaseNum, 10);
+            if (isNaN(phase) || phase < 1) phase = 1;
+            if (phase > 7) phase = 7;
+
+            let percentage = (pct !== undefined && pct !== null && !isNaN(pct)) ? parseInt(pct, 10) : Math.round((phase / 7.0) * 100);
+            if (isNaN(percentage) || percentage < 0) percentage = 0;
+            if (percentage > 100) percentage = 100;
+
+            const name = stepName || `Phase ${phase}: Evaluation in Progress`;
+
+            const badge = document.getElementById('journey-step-badge');
+            const stepNameEl = document.getElementById('journey-step-name');
+            const progressBar = document.getElementById('journey-progress-bar');
+            const pctText = document.getElementById('journey-percentage-text');
+
+            if (badge) badge.textContent = `Step ${phase} of 7 (${percentage}%)`;
+            if (stepNameEl) stepNameEl.textContent = name;
+            if (progressBar) progressBar.style.width = `${percentage}%`;
+            if (pctText) pctText.textContent = `${percentage}%`;
+
+            // Update mini step pills
+            for (let i = 1; i <= 7; i++) {
+                const pill = document.getElementById(`pill-p${i}`);
+                if (pill) {
+                    if (i < phase) {
+                        pill.className = 'px-2 py-0.5 rounded font-semibold bg-emerald-600 text-white shadow-sm';
+                    } else if (i === phase) {
+                        pill.className = 'px-2 py-0.5 rounded font-semibold bg-blue-500 text-white shadow-sm ring-1 ring-white/50 animate-pulse';
+                    } else {
+                        pill.className = 'px-2 py-0.5 rounded font-semibold bg-gray-800 text-gray-400';
+                    }
+                }
+            }
+        }
+
+        // Initialize connection and fetch workspace payload on load
+        window.addEventListener('DOMContentLoaded', async () => {
+            await loadWorkspaces();
+        });
+
+        async function loadWorkspaces(selectId = null) {
+            try {
+                const res = await fetch('/api/v1/workspaces/');
+                availableWorkspaces = await res.json();
+                const selector = document.getElementById('workspace-selector');
+                if (selector && availableWorkspaces.length > 0) {
+                    selector.innerHTML = '';
+                    availableWorkspaces.forEach(ws => {
+                        const opt = document.createElement('option');
+                        opt.value = ws.id;
+                        const phaseNum = ws.current_phase || 1;
+                        opt.textContent = `📁 ${ws.name} [Step ${phaseNum}/7] (${ws.can_edit ? 'Edit' : 'Read-Only'})`;
+                        selector.appendChild(opt);
+                    });
+                    const target = selectId ? availableWorkspaces.find(w => w.id === selectId) : (availableWorkspaces.find(w => w.is_default) || availableWorkspaces[0]);
+                    if (target) {
+                        selector.value = target.id;
+                        currentWorkspaceId = target.id;
+                        currentWorkspace = target;
+                        applyWorkspaceState();
+                        updateJourneyUI(target.current_phase, target.last_completed_step, target.current_phase ? Math.round((target.current_phase / 7.0) * 100) : 14);
+                        sendAction('resume_workspace', 'Resuming workspace: ' + target.name);
+                    }
+                } else {
+                    sendAction('welcome', 'Initialize connection');
+                }
+            } catch (err) {
+                console.error('Error loading enterprise workspaces:', err);
+                sendAction('welcome', 'Initialize connection');
+            }
+        }
+
+        function switchWorkspace(workspaceId) {
+            currentWorkspaceId = workspaceId;
+            currentWorkspace = availableWorkspaces.find(w => w.id === workspaceId);
+            applyWorkspaceState();
+            if (currentWorkspace) {
+                updateJourneyUI(
+                    currentWorkspace.current_phase,
+                    currentWorkspace.last_completed_step,
+                    currentWorkspace.current_phase ? Math.round((currentWorkspace.current_phase / 7.0) * 100) : 14
+                );
+            }
+            clearChat();
+            sendAction('resume_workspace', 'Switched workspace context: ' + (currentWorkspace ? currentWorkspace.name : ''));
+        }
+
+        function applyWorkspaceState() {
+            const banner = document.getElementById('read-only-banner');
+            if (!currentWorkspace || currentWorkspace.can_edit) {
+                if (banner) banner.classList.add('hidden');
+            } else {
+                if (banner) banner.classList.remove('hidden');
+            }
+        }
+
+        function openCreateWorkspaceModal() {
+            document.getElementById('create-workspace-modal').classList.remove('hidden');
+        }
+
+        function closeCreateWorkspaceModal() {
+            document.getElementById('create-workspace-modal').classList.add('hidden');
+        }
+
+        async function submitCreateWorkspace(event) {
+            event.preventDefault();
+            const name = document.getElementById('ws-name-input').value.trim();
+            const report_type = document.getElementById('ws-report-input').value.trim();
+            const description = document.getElementById('ws-desc-input').value.trim();
+            const editors = document.getElementById('ws-editors-input').value.trim();
+            try {
+                const res = await fetch('/api/v1/workspaces/', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, report_type, description, co_editors_json: editors, is_default: false })
+                });
+                if (res.ok) {
+                    const ws = await res.json();
+                    closeCreateWorkspaceModal();
+                    await loadWorkspaces(ws.id);
+                } else {
+                    const err = await res.json();
+                    alert('Error creating workspace: ' + (err.detail || 'Unknown error'));
+                }
+            } catch (err) {
+                alert('Connection error attempting to create workspace.');
+            }
+        }
+
+        async function handleChatSubmit(event) {
+            event.preventDefault();
+            const input = document.getElementById('user-input');
+            const text = input.value.trim();
+            if (!text) return;
+            input.value = '';
+            appendMessage('user', text);
+            await fetchAgentResponse({ message: text, context_data: formContextStore });
+        }
+
+        async function sendAction(actionId, displayText) {
+            if (actionId === 'open_saved_artifacts') {
+                openSavedArtifactsModal();
+                return;
+            }
+            if (actionId !== 'welcome' && actionId !== 'resume_workspace') {
+                appendMessage('user', displayText);
+            }
+            await fetchAgentResponse({ message: displayText, action_id: actionId, context_data: formContextStore });
+        }
+
+        async function fetchAgentResponse(payload) {
+            const messagesContainer = document.getElementById('chat-messages');
+            const spinner = document.getElementById('loading-spinner');
+            if (spinner) spinner.remove();
+
+            // Show typing indicator
+            const typingId = 'typing-' + Date.now();
+            const typingDiv = document.createElement('div');
+            typingDiv.id = typingId;
+            typingDiv.className = 'flex items-center space-x-2 text-gray-400 text-sm italic pl-2';
+            typingDiv.innerHTML = '<div class="animate-pulse flex space-x-1"><div class="w-2 h-2 bg-blue-400 rounded-full"></div><div class="w-2 h-2 bg-blue-400 rounded-full animation-delay-200"></div><div class="w-2 h-2 bg-blue-400 rounded-full animation-delay-400"></div></div><span>Analyst Response Agent (ARA) is rendering response...</span>';
+            messagesContainer.appendChild(typingDiv);
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+            if (currentWorkspaceId) payload.workspace_id = currentWorkspaceId;
+            try {
+                const response = await fetch('/api/v1/a2ui/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const data = await response.json();
+                
+                document.getElementById(typingId)?.remove();
+
+                if (data.restored_context && typeof data.restored_context === 'object') {
+                    safeUpdateContext(data.restored_context);
+                    if (data.restored_context.current_phase) {
+                        updateJourneyUI(
+                            data.restored_context.current_phase,
+                            data.restored_context.last_completed_step,
+                            data.restored_context.journey_percentage
+                        );
+                    }
+                }
+
+                // Render conversational text
+                const agentMsgDiv = appendMessage('agent', data.response_text, data.agent_name);
+
+                // Render A2UI surface blocks
+                let firstSurfaceWrapper = null;
+                if (data.a2ui_payloads && data.a2ui_payloads.length > 0) {
+                    data.a2ui_payloads.forEach((rawPayload, idx) => {
+                        const wrapper = renderA2UISurface(rawPayload, false);
+                        if (idx === 0) firstSurfaceWrapper = wrapper;
+                    });
+                }
+
+                // Smart Viewport Anchoring: Smoothly anchor to the top of the newly appended response turn
+                const anchorEl = agentMsgDiv || firstSurfaceWrapper;
+                if (anchorEl) {
+                    setTimeout(() => {
+                        anchorEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }, 50);
+                } else {
+                    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+                }
+            } catch (error) {
+                document.getElementById(typingId)?.remove();
+                appendMessage('agent', '⚠️ Error connecting to Cloud Run A2UI engine: ' + error.message);
+            }
+        }
+
+        function appendMessage(sender, text, name = 'You') {
+            if (sender !== 'user' && (!text || !text.trim())) {
+                return null;
+            }
+            const container = document.getElementById('chat-messages');
+            const msgDiv = document.createElement('div');
+            
+            if (sender === 'user') {
+                msgDiv.className = 'flex justify-end';
+                msgDiv.innerHTML = `
+                    <div class="bg-blue-600 text-white rounded-2xl rounded-tr-sm px-5 py-3.5 max-w-lg shadow-sm text-sm">
+                        <p class="whitespace-pre-wrap">${escapeHtml(text)}</p>
+                    </div>
+                `;
+            } else {
+                msgDiv.className = 'flex justify-start items-start space-x-3 max-w-3xl';
+                msgDiv.innerHTML = `
+                    <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs flex-shrink-0 mt-1">
+                        AI
+                    </div>
+                    <div class="bg-gray-50 border border-gray-200/80 rounded-2xl rounded-tl-sm px-5 py-4 flex-1 shadow-sm text-sm">
+                        <div class="text-xs font-semibold text-blue-600 mb-1.5 flex items-center justify-between">
+                            <span>${escapeHtml(name)}</span>
+                            <span class="text-gray-400 font-normal">Just now</span>
+                        </div>
+                        <div class="prose prose-sm max-w-none text-gray-800 leading-relaxed whitespace-pre-wrap">${formatMarkdown(text)}</div>
+                    </div>
+                `;
+            }
+            container.appendChild(msgDiv);
+            if (sender === 'user') {
+                container.scrollTop = container.scrollHeight;
+            }
+            return msgDiv;
+        }
+
+        // A2UI Client Native DOM Renderer (v0.9 protocol)
+        function renderA2UISurface(rawA2uiTag, autoScroll = true) {
+            const container = document.getElementById('chat-messages');
+            const surfaceWrapper = document.createElement('div');
+            surfaceWrapper.className = 'ml-11 max-w-3xl my-4';
+
+            try {
+                // Extract JSON from <a2ui-json> tags or parse directly
+                let jsonStr = rawA2uiTag;
+                const match = rawA2uiTag.match(/<a2ui-json>\s*([\s\S]*?)\s*<\/a2ui-json>/);
+                if (match && match[1]) {
+                    jsonStr = match[1];
+                }
+                const surfaceData = JSON.parse(jsonStr);
+                
+                if (surfaceData.surfaceId === 'saved_artifacts_card') {
+                    openSavedArtifactsModal();
+                }
+
+                const cardContainer = document.createElement('div');
+                cardContainer.className = 'bg-white border-2 border-blue-500/20 rounded-2xl shadow-md p-6 space-y-4';
+                
+                // Header badge
+                const badge = document.createElement('div');
+                badge.className = 'inline-flex items-center space-x-1.5 bg-blue-50 text-blue-700 px-2.5 py-1 rounded-md text-xs font-semibold tracking-wide uppercase border border-blue-200/60';
+                badge.innerHTML = '<span>⚡ A2UI Declarative Surface (' + (surfaceData.surfaceId || 'card') + ')</span>';
+                cardContainer.appendChild(badge);
+
+                // Render component tree
+                if (surfaceData.components && Array.isArray(surfaceData.components)) {
+                    surfaceData.components.forEach(node => {
+                        const domElement = buildComponentDom(node.component, node.id);
+                        if (domElement) cardContainer.appendChild(domElement);
+                    });
+                }
+
+                surfaceWrapper.appendChild(cardContainer);
+            } catch (err) {
+                surfaceWrapper.innerHTML = `<div class="bg-red-50 text-red-700 p-3 rounded-xl text-xs border border-red-200">Failed to render A2UI surface: ${escapeHtml(err.message)}</div>`;
+            }
+            container.appendChild(surfaceWrapper);
+            if (autoScroll) {
+                container.scrollTop = container.scrollHeight;
+            }
+            return surfaceWrapper;
+        }
+
+        function buildComponentDom(compObj, nodeId) {
+            if (!compObj) return null;
+
+            if (compObj.Text) {
+                const textVal = compObj.Text.text?.literalString || '';
+                const hint = compObj.Text.usageHint || 'body';
+                const el = document.createElement('div');
+                if (hint === 'h2') {
+                    el.className = 'text-lg font-bold text-gray-900 border-b pb-2 pt-1 border-gray-100';
+                } else if (hint === 'caption') {
+                    el.className = 'text-xs text-amber-800 bg-amber-50 p-3 rounded-xl border border-amber-200 font-medium leading-relaxed';
+                } else {
+                    el.className = 'text-sm text-gray-700 leading-relaxed';
+                }
+                el.textContent = textVal;
+                return el;
+            }
+
+            if (compObj.TextField) {
+                const tf = compObj.TextField;
+                const wrapper = document.createElement('div');
+                wrapper.className = 'space-y-1.5 pt-1';
+                const label = document.createElement('label');
+                label.className = 'block text-xs font-semibold text-gray-700';
+                label.textContent = tf.label || 'Input';
+                
+                const isBrowseField = tf.allowBrowse || tf.dataBinding?.includes('welcome_packet_url') || tf.dataBinding?.includes('demo_guidelines_url');
+
+                if (isBrowseField && !tf.multiline) {
+                    const bindKey = tf.dataBinding ? tf.dataBinding.replace('/intake/', '') : 'file_url';
+                    const container = document.createElement('div');
+                    container.className = 'mt-1.5 space-y-3 bg-gradient-to-b from-gray-50/90 to-blue-50/20 p-4 rounded-3xl border border-gray-200 shadow-md';
+
+                    // 1. Large Drag & Drop Area
+                    const dropZone = document.createElement('div');
+                    dropZone.className = 'border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/30 hover:bg-blue-50 rounded-2xl p-6 transition duration-200 text-center cursor-pointer group flex flex-col items-center justify-center space-y-2';
+                    
+                    const hiddenFileInput = document.createElement('input');
+                    hiddenFileInput.type = 'file';
+                    hiddenFileInput.style.display = 'none';
+                    
+                    const dropZoneContent = document.createElement('div');
+                    dropZoneContent.className = 'space-y-1';
+                    
+                    const updateDropZoneUI = (fileName) => {
+                        if (fileName) {
+                            dropZone.className = 'border-2 border-solid border-emerald-500 bg-emerald-50/60 rounded-2xl p-5 transition duration-200 text-center cursor-pointer flex flex-col items-center justify-center space-y-1 shadow-inner';
+                            dropZoneContent.innerHTML = `
+                                <div class="text-3xl">✅</div>
+                                <div class="font-extrabold text-sm text-emerald-950">${escapeHtml(fileName)}</div>
+                                <div class="text-xs font-semibold text-emerald-700">File attached & bound to form • Click or drag to replace</div>
+                            `;
+                        } else {
+                            dropZone.className = 'border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/30 hover:bg-blue-50 rounded-2xl p-6 transition duration-200 text-center cursor-pointer group flex flex-col items-center justify-center space-y-2';
+                            dropZoneContent.innerHTML = `
+                                <div class="text-4xl group-hover:scale-110 transition duration-200">☁️</div>
+                                <div class="font-bold text-sm text-blue-950 group-hover:text-blue-600 transition">Drag & Drop your document or file right here</div>
+                                <div class="text-xs text-gray-500 font-medium">Or click anywhere in this zone to browse your desktop (.pdf, .docx, .json, .xlsx)</div>
+                            `;
+                        }
+                    };
+                    updateDropZoneUI(tf.value || tf.initialValue || null);
+
+                    hiddenFileInput.addEventListener('change', (e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                            const file = e.target.files[0];
+                            const fileUrl = `file://local-machine-upload/${file.name}`;
+                            input.value = fileUrl;
+                            formContextStore[bindKey] = fileUrl;
+                            updateDropZoneUI(file.name);
+                        }
+                    });
+
+                    dropZone.addEventListener('click', () => hiddenFileInput.click());
+
+                    dropZone.addEventListener('dragover', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dropZone.classList.add('border-blue-600', 'bg-blue-100/60', 'scale-[1.01]');
+                    });
+                    dropZone.addEventListener('dragleave', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dropZone.classList.remove('border-blue-600', 'bg-blue-100/60', 'scale-[1.01]');
+                    });
+                    dropZone.addEventListener('drop', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        dropZone.classList.remove('border-blue-600', 'bg-blue-100/60', 'scale-[1.01]');
+                        if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                            const file = e.dataTransfer.files[0];
+                            const fileUrl = `file://local-machine-upload/${file.name}`;
+                            input.value = fileUrl;
+                            formContextStore[bindKey] = fileUrl;
+                            updateDropZoneUI(file.name);
+                        }
+                    });
+
+                    dropZone.appendChild(dropZoneContent);
+                    dropZone.appendChild(hiddenFileInput);
+
+                    // 2. Direct URL paste & go-link row underneath
+                    const inputRow = document.createElement('div');
+                    inputRow.className = 'flex items-center gap-2 pt-1';
+                    const inputLabel = document.createElement('span');
+                    inputLabel.className = 'text-xs font-bold text-gray-500 whitespace-nowrap';
+                    inputLabel.textContent = 'Or Paste Link:';
+                    
+                    const input = document.createElement('input');
+                    input.type = 'text';
+                    input.className = 'flex-1 bg-white border border-gray-300 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-gray-800 transition shadow-inner';
+                    input.placeholder = tf.placeholder || 'Paste Drive link (https://docs.google.com/...) or go-link...';
+                    if (tf.value || tf.initialValue) input.value = tf.value || tf.initialValue;
+                    input.addEventListener('input', (e) => {
+                        formContextStore[bindKey] = e.target.value;
+                        if (e.target.value.trim()) {
+                            updateDropZoneUI(e.target.value.trim().split('/').pop() || 'URL Linked');
+                        } else {
+                            updateDropZoneUI(null);
+                        }
+                    });
+                    inputRow.appendChild(inputLabel);
+                    inputRow.appendChild(input);
+
+                    container.appendChild(dropZone);
+                    container.appendChild(inputRow);
+
+                    wrapper.appendChild(label);
+                    wrapper.appendChild(container);
+                    return wrapper;
+                }
+
+                let input;
+                if (tf.multiline) {
+                    input = document.createElement('textarea');
+                    const isLongOrEmail = tf.dataBinding?.includes('leadership_email') || tf.placeholder?.includes('\n') || (tf.value || tf.initialValue)?.includes('\n') || (tf.placeholder?.length > 80);
+                    input.rows = isLongOrEmail ? 14 : 3;
+                } else {
+                    input = document.createElement('input');
+                    input.type = 'text';
+                }
+                input.className = 'w-full bg-gray-50 border border-gray-300 rounded-xl px-3.5 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition';
+                input.placeholder = tf.placeholder || '';
+                if (tf.value || tf.initialValue) {
+                    input.value = tf.value || tf.initialValue;
+                } else if (tf.multiline && tf.placeholder && (tf.placeholder.includes('\n') || tf.placeholder.length > 80)) {
+                    input.value = tf.placeholder;
+                }
+                
+                if (tf.dataBinding) {
+                    const bindKey = tf.dataBinding.replace('/intake/', '');
+                    input.addEventListener('input', (e) => {
+                        formContextStore[bindKey] = e.target.value;
+                    });
+                }
+
+                wrapper.appendChild(label);
+                wrapper.appendChild(input);
+                return wrapper;
+            }
+
+            if (compObj.SectionBox || compObj.ListCard) {
+                const box = compObj.SectionBox || compObj.ListCard;
+                const wrapper = document.createElement('div');
+                wrapper.className = 'border border-gray-200/90 rounded-xl overflow-hidden bg-white shadow-sm my-3';
+
+                const header = document.createElement('div');
+                header.className = 'bg-gray-100/90 border-b border-gray-200 px-4 py-2.5 font-bold text-sm text-gray-800 tracking-wide';
+                header.textContent = box.header || box.title || 'Section';
+                wrapper.appendChild(header);
+
+                const listContainer = document.createElement('div');
+                listContainer.className = 'divide-y divide-gray-100';
+
+                if (box.items && Array.isArray(box.items)) {
+                    box.items.forEach(itemStr => {
+                        const row = document.createElement('div');
+                        row.className = 'px-4 py-2.5 text-sm text-gray-700 hover:bg-blue-50/40 transition flex items-center justify-between leading-relaxed font-medium';
+                        row.textContent = typeof itemStr === 'string' ? itemStr : (itemStr.text || itemStr.label || '');
+                        listContainer.appendChild(row);
+                    });
+                }
+                wrapper.appendChild(listContainer);
+                return wrapper;
+            }
+
+            if (compObj.Card) {
+                const card = compObj.Card;
+                const cardEl = document.createElement('div');
+                const titleStr = card.title || '';
+                
+                if (titleStr.includes('❌') || titleStr.toLowerCase().includes('decline')) {
+                    cardEl.className = 'a2ui-violation bg-red-50/90 border-2 border-red-500 rounded-xl p-5 space-y-2 shadow-sm text-red-950 font-bold';
+                } else if (titleStr.includes('✅') || titleStr.toLowerCase().includes('proceed')) {
+                    cardEl.className = 'a2ui-success bg-green-50/90 border-2 border-green-600 rounded-xl p-5 space-y-2 shadow-sm text-green-950 font-bold';
+                } else {
+                    cardEl.className = 'a2ui-card bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-1';
+                }
+
+                if (card.title) {
+                    const t = document.createElement('h4');
+                    t.className = 'text-sm font-bold text-gray-900 flex items-center justify-between';
+                    t.innerHTML = formatMarkdown(card.title);
+                    cardEl.appendChild(t);
+                }
+                if (card.subtitle) {
+                    const st = document.createElement('div');
+                    st.className = 'text-xs text-gray-700 leading-relaxed font-normal';
+                    st.innerHTML = formatMarkdown(card.subtitle);
+                    cardEl.appendChild(st);
+                }
+                return cardEl;
+            }
+
+            if (compObj.Button) {
+                const btn = compObj.Button;
+                const button = document.createElement('button');
+                button.className = 'w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm py-3 px-6 rounded-xl shadow-md transition transform active:scale-[0.99] flex items-center justify-center space-x-2 mt-3';
+                button.innerHTML = `<span>${escapeHtml(btn.label || 'Submit')}</span> <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path></svg>`;
+                if (btn.action && btn.action.eventId) {
+                    button.addEventListener('click', () => {
+                        const isCnap = (document.body.innerText || '').includes('Cloud-Native') || (document.body.innerText || '').includes('CNAP');
+                        if (btn.action.eventId === 'download_report') {
+                            window.open('/api/v1/export/deep-dive-report?report=' + (isCnap ? 'cnap' : 'devsecops'), '_blank');
+                        } else if (btn.action.eventId === 'download_kickoff_deck') {
+                            window.open('/api/v1/export/kickoff-deck?format=md&report=devsecops', '_blank');
+                        } else if (btn.action.eventId === 'download_cnap_kickoff_deck') {
+                            window.open('/api/v1/export/kickoff-deck?format=md&report=cnap', '_blank');
+                        } else if (btn.action.eventId === 'download_workback_schedule' || btn.action.eventId === 'download_workback_schedule_md') {
+                            window.open('/api/v1/export/workback-schedule?format=md', '_blank');
+                        } else if (btn.action.eventId === 'download_workback_schedule_csv') {
+                            window.open('/api/v1/export/workback-schedule?format=csv', '_blank');
+                        } else if (btn.action.eventId === 'download_rfi_md') {
+                            window.open('/api/v1/export/rfi-responses?format=md&report=devsecops', '_blank');
+                        } else if (btn.action.eventId === 'download_rfi_csv') {
+                            window.open('/api/v1/export/rfi-responses?format=csv&report=devsecops', '_blank');
+                        } else if (btn.action.eventId === 'download_cnap_rfi_md') {
+                            window.open('/api/v1/export/rfi-responses?format=md&report=cnap', '_blank');
+                        } else if (btn.action.eventId === 'download_cnap_rfi_csv') {
+                            window.open('/api/v1/export/rfi-responses?format=csv&report=cnap', '_blank');
+                        } else if (btn.action.eventId === 'download_demo_playbook') {
+                            window.open('/api/v1/export/demo-playbook?report=' + (isCnap ? 'cnap' : 'devsecops'), '_blank');
+                        } else if (btn.action.eventId === 'download_executive_memo') {
+                            window.open('/api/v1/export/executive-review-memo?report=' + (isCnap ? 'cnap' : 'devsecops'), '_blank');
+                        } else if (btn.action.eventId === 'download_publication_bundle') {
+                            window.open('/api/v1/export/final-publication-bundle?report=' + (isCnap ? 'cnap' : 'devsecops'), '_blank');
+                        } else if (btn.action.eventId === 'copy_leadership_email') {
+                            const container = button.closest('.bg-white') || button.parentElement.parentElement || document;
+                            const textarea = container.querySelector('textarea') || container.querySelector('input[type="text"]');
+                            const textToCopy = textarea ? (textarea.value || textarea.placeholder || '') : '';
+                            if (textarea) {
+                                textarea.select();
+                            }
+                            const copyPromise = (navigator.clipboard && window.isSecureContext)
+                                ? navigator.clipboard.writeText(textToCopy)
+                                : new Promise((resolve) => { document.execCommand('copy'); resolve(); });
+                            copyPromise.then(() => {
+                                button.innerHTML = '<span>✅ Copied Draft to Clipboard!</span>';
+                                setTimeout(() => { button.innerHTML = `<span>${escapeHtml(btn.label)}</span>`; }, 2500);
+                            }).catch(err => {
+                                button.innerHTML = '<span>Text highlighted! Press Ctrl+C / Cmd+C to copy</span>';
+                                setTimeout(() => { button.innerHTML = `<span>${escapeHtml(btn.label)}</span>`; }, 3500);
+                            });
+                        } else {
+                            sendAction(btn.action.eventId, btn.label || 'Submit');
+                        }
+                    });
+                }
+                return button;
+            }
+
+            if (compObj.Row) {
+                const row = document.createElement('div');
+                row.className = 'flex items-center justify-end space-x-3 pt-2';
+                return row;
+            }
+
+            return null;
+        }
+
+        function openSavedArtifactsModal() {
+            const modal = document.getElementById('saved-artifacts-modal');
+            modal.classList.remove('hidden');
+            const container = document.getElementById('artifacts-list-container');
+            container.innerHTML = '<div class="flex items-center justify-center h-40 text-gray-400 text-xs"><div class="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></div><span>Loading database reports...</span></div>';
+            
+            fetch('/api/v1/artifacts/' + (currentWorkspaceId ? '?workspace_id=' + currentWorkspaceId : ''))
+                .then(res => res.json())
+                .then(artifacts => {
+                    container.innerHTML = '';
+                    if (!artifacts || artifacts.length === 0) {
+                        container.innerHTML = '<div class="text-center p-6 bg-gray-50 rounded-xl border border-gray-200 text-gray-500 text-xs">No saved artifacts found.</div>';
+                        return;
+                    }
+                    artifacts.forEach(art => {
+                        const card = document.createElement('div');
+                        card.className = 'bg-gray-50 border border-gray-200/80 rounded-xl p-4 space-y-2.5 shadow-sm hover:shadow-md transition';
+                        
+                        const header = document.createElement('div');
+                        header.className = 'flex items-start justify-between';
+                        header.innerHTML = `
+                            <div>
+                                <span class="text-[10px] uppercase font-bold text-blue-600 bg-blue-100/80 px-2 py-0.5 rounded-md tracking-wider">${escapeHtml(art.artifact_type || 'report')}</span>
+                                <h4 class="text-xs font-bold text-gray-900 mt-1">${escapeHtml(art.title || 'Untitled')}</h4>
+                            </div>
+                        `;
+                        card.appendChild(header);
+
+                        const summary = document.createElement('p');
+                        summary.className = 'text-[11px] text-gray-600 leading-normal line-clamp-3';
+                        summary.textContent = art.summary || 'No summary available.';
+                        card.appendChild(summary);
+
+                        const btnRow = document.createElement('div');
+                        btnRow.className = 'flex flex-wrap items-center justify-between pt-2 border-t border-gray-200/70 gap-1.5';
+                        
+                        const viewBtn = document.createElement('button');
+                        viewBtn.className = 'flex-1 bg-white hover:bg-blue-50 text-blue-600 border border-blue-200 font-semibold text-[11px] py-1.5 px-2 rounded-lg transition flex items-center justify-center space-x-1 shadow-sm';
+                        viewBtn.innerHTML = '<span>👁️ View</span>';
+                        viewBtn.onclick = () => openArtifactPreviewModal(art);
+
+                        const copyBtn = document.createElement('button');
+                        copyBtn.className = 'flex-1 bg-white hover:bg-blue-50 text-gray-700 hover:text-blue-600 border border-gray-200 font-semibold text-[11px] py-1.5 px-2 rounded-lg transition flex items-center justify-center space-x-1 shadow-sm';
+                        copyBtn.innerHTML = '<span>📋 Copy</span>';
+                        copyBtn.onclick = () => {
+                            const textToCopy = art.content || art.summary || '';
+                            navigator.clipboard.writeText(textToCopy).then(() => {
+                                copyBtn.innerHTML = '<span>✅ Copied!</span>';
+                                setTimeout(() => { copyBtn.innerHTML = '<span>📋 Copy</span>'; }, 2000);
+                            });
+                        };
+
+                        const restoreBtn = document.createElement('button');
+                        restoreBtn.className = 'flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[11px] py-1.5 px-2.5 rounded-lg shadow-sm transition flex items-center justify-center space-x-1';
+                        restoreBtn.innerHTML = '<span>⚡ Restore</span>';
+                        restoreBtn.onclick = () => {
+                            sendAction('restore_artifact_' + art.id, 'Restore Context: ' + art.title);
+                            closeSavedArtifactsModal();
+                        };
+
+                        const deleteBtn = document.createElement('button');
+                        deleteBtn.className = 'bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 font-semibold text-[11px] py-1.5 px-2.5 rounded-lg transition flex items-center justify-center space-x-1 shadow-sm';
+                        deleteBtn.innerHTML = '<span>🗑️ Delete</span>';
+                        deleteBtn.onclick = () => {
+                            if (confirm(`Are you sure you want to permanently delete "${art.title || 'Untitled'}"?`)) {
+                                deleteBtn.innerHTML = '<span>⏳ Deleting...</span>';
+                                deleteBtn.disabled = true;
+                                fetch(`/api/v1/artifacts/${art.id}`, { method: 'DELETE' })
+                                    .then(res => {
+                                        if (res.ok || res.status === 204) {
+                                            card.style.opacity = '0';
+                                            card.style.transform = 'scale(0.95)';
+                                            card.style.transition = 'all 0.2s ease-out';
+                                            setTimeout(() => {
+                                                card.remove();
+                                                if (container.children.length === 0) {
+                                                    container.innerHTML = '<div class="text-center p-6 bg-gray-50 rounded-xl border border-gray-200 text-gray-500 text-xs font-medium">No saved artifacts found.</div>';
+                                                }
+                                            }, 200);
+                                        } else {
+                                            alert('Failed to delete artifact. Please try again.');
+                                            deleteBtn.innerHTML = '<span>🗑️ Delete</span>';
+                                            deleteBtn.disabled = false;
+                                        }
+                                    })
+                                    .catch(err => {
+                                        alert(`Error deleting artifact: ${err.message}`);
+                                        deleteBtn.innerHTML = '<span>🗑️ Delete</span>';
+                                        deleteBtn.disabled = false;
+                                    });
+                            }
+                        };
+
+                        btnRow.appendChild(viewBtn);
+                        btnRow.appendChild(copyBtn);
+                        btnRow.appendChild(restoreBtn);
+                        btnRow.appendChild(deleteBtn);
+                        card.appendChild(btnRow);
+
+                        container.appendChild(card);
+                    });
+                })
+                .catch(err => {
+                    container.innerHTML = `<div class="bg-red-50 text-red-700 p-3 rounded-xl text-xs border border-red-200">Error fetching artifacts: ${escapeHtml(err.message)}</div>`;
+                });
+        }
+
+        function closeSavedArtifactsModal() {
+            document.getElementById('saved-artifacts-modal').classList.add('hidden');
+        }
+
+        function openArtifactPreviewModal(art) {
+            document.getElementById('preview-modal-title').textContent = art.title || 'Artifact Preview';
+            document.getElementById('preview-modal-type').textContent = (art.artifact_type || 'report').toUpperCase() + ' • ID: ' + art.id;
+            document.getElementById('preview-modal-content').innerHTML = formatMarkdown(art.content || art.summary || 'No detailed content available.');
+            
+            const copyBtn = document.getElementById('preview-copy-btn');
+            copyBtn.onclick = () => {
+                navigator.clipboard.writeText(art.content || art.summary || '').then(() => {
+                    copyBtn.innerHTML = '<span>✅ Full Content Copied to Clipboard!</span>';
+                    setTimeout(() => { copyBtn.innerHTML = '<span>📋 Copy Full Content to Clipboard</span>'; }, 2500);
+                });
+            };
+
+            document.getElementById('artifact-preview-modal').classList.remove('hidden');
+        }
+
+        function closeArtifactPreviewModal() {
+            document.getElementById('artifact-preview-modal').classList.add('hidden');
+        }
+
+
+
+        function clearChat() {
+            document.getElementById('chat-messages').innerHTML = '';
+            appendMessage('agent', 'Conversation cleared. How else can I assist you with universal analyst evaluations (`Gartner MQ/CC`, `Forrester Wave`, `IDC MarketScape`)?');
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+        }
+
+        function sanitizeUrl(url) {
+            if (!url) return '#';
+            const trimmed = url.trim();
+            const lower = trimmed.toLowerCase();
+            // Disallow javascript:, vbscript:, and malicious data: URIs
+            if (lower.startsWith('javascript:') || lower.startsWith('vbscript:') || (lower.startsWith('data:') && !lower.startsWith('data:image/'))) {
+                return '#';
+            }
+            return trimmed;
+        }
+
+        function formatMarkdown(text) {
+            if (!text) return '';
+            let formatted = escapeHtml(text);
+            // Headings
+            formatted = formatted.replace(/^### (.*$)/gim, '<h3 class="text-base font-bold text-gray-900 mt-4 mb-2 border-b pb-1">$1</h3>');
+            formatted = formatted.replace(/^## (.*$)/gim, '<h2 class="text-lg font-bold text-gray-900 mt-5 mb-2 border-b pb-1">$1</h2>');
+            formatted = formatted.replace(/^# (.*$)/gim, '<h1 class="text-xl font-extrabold text-blue-900 mt-6 mb-3 border-b-2 border-blue-200 pb-2">$1</h1>');
+            // Images: ![alt](url)
+            formatted = formatted.replace(/!\[([^\]]*)\]\(([^\)]+)\)/g, (match, alt, url) => {
+                const safeUrl = sanitizeUrl(url);
+                return `<div class="my-4 text-center"><img src="${safeUrl}" alt="${alt}" class="rounded-2xl shadow-lg border-2 border-gray-200/80 max-h-[460px] mx-auto transition hover:scale-[1.01]"><p class="text-xs text-gray-500 mt-1.5 font-medium italic">${alt}</p></div>`;
+            });
+            // Links: [text](url)
+            formatted = formatted.replace(/\[([^\]]+)\]\(([^\)]+)\)/g, (match, linkText, url) => {
+                const safeUrl = sanitizeUrl(url);
+                return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-blue-600 font-semibold hover:underline">${linkText}</a>`;
+            });
+            // Bold
+            formatted = formatted.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            // Inline Code
+            formatted = formatted.replace(/`([^`]+)`/g, '<code class="bg-gray-200/70 text-blue-700 px-1.5 py-0.5 rounded text-xs font-mono">$1</code>');
+            // Bullet points
+            formatted = formatted.replace(/^\* (.*$)/gim, '<li class="ml-5 list-disc text-sm text-gray-700 my-1 leading-relaxed">$1</li>');
+            formatted = formatted.replace(/^- (.*$)/gim, '<li class="ml-5 list-disc text-sm text-gray-700 my-1 leading-relaxed">$1</li>');
+            return formatted;
+        }
+    </script>
+</body>
+</html>

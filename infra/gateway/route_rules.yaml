@@ -1,0 +1,149 @@
+# Declarative Resource Manifest: Network Services HttpRoute
+# Maps client ingress endpoints to Vertex AI Agent Engine Microservice
+# Governed by Agent Platform Agent Gateway: conductor-v3-ingress-gateway
+
+name: projects/riccardo-blog-test-v1/locations/global/httpRoutes/conductor-v3-gateway-routes
+description: "Route rules mapping client paths to Vertex AI Agent Engine microservice via Agent Gateway"
+gateways:
+  - projects/riccardo-blog-test-v1/locations/us-central1/agentGateways/conductor-v3-ingress-gateway
+hostnames:
+  - "*"
+labels:
+  app: conductor-v3
+  runtime: agent-engine
+  managed-by: agent-platform
+rules:
+  # 1. Synchronous Query Endpoint (/query)
+  - matches:
+      - fullPathMatch: /query
+    action:
+      destinations:
+        - serviceName: projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/5851800444384313344
+          weight: 100
+      timeout: 60s
+      corsPolicy:
+        allowOrigins:
+          - "*"
+        allowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        allowHeaders:
+          - Content-Type
+          - Authorization
+          - X-User-Email
+          - X-Goog-Authenticated-User-Email
+          - x-goog-iap-jwt-assertion
+          - X-Cloud-Trace-Context
+          - X-Workspace-ID
+        maxAge: "3600s"
+        allowCredentials: false
+        disabled: false
+
+  # 2. Streaming Query Endpoint (/streamQuery & /query:stream)
+  - matches:
+      - fullPathMatch: /streamQuery
+      - fullPathMatch: /query:stream
+    action:
+      destinations:
+        - serviceName: projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/5851800444384313344
+          weight: 100
+      timeout: 300s
+      corsPolicy:
+        allowOrigins:
+          - "*"
+        allowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        allowHeaders:
+          - Content-Type
+          - Authorization
+          - X-User-Email
+          - X-Goog-Authenticated-User-Email
+          - x-goog-iap-jwt-assertion
+          - X-Cloud-Trace-Context
+          - X-Workspace-ID
+        maxAge: "3600s"
+        allowCredentials: false
+        disabled: false
+
+  # 3. Agent Capability Card Endpoint (/getAgentCard)
+  - matches:
+      - fullPathMatch: /getAgentCard
+    action:
+      destinations:
+        - serviceName: projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/5851800444384313344
+          weight: 100
+      timeout: 30s
+      corsPolicy:
+        allowOrigins:
+          - "*"
+        allowMethods:
+          - GET
+          - POST
+          - OPTIONS
+        allowHeaders:
+          - Content-Type
+          - Authorization
+          - X-User-Email
+          - X-Goog-Authenticated-User-Email
+          - x-goog-iap-jwt-assertion
+          - X-Cloud-Trace-Context
+          - X-Workspace-ID
+        maxAge: "3600s"
+        allowCredentials: false
+        disabled: false
+
+  # 4. RESTful API Routes (/api/v1/*)
+  - matches:
+      - prefixMatch: /api/v1/
+    action:
+      destinations:
+        - serviceName: projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/5851800444384313344
+          weight: 100
+      timeout: 60s
+      corsPolicy:
+        allowOrigins:
+          - "*"
+        allowMethods:
+          - GET
+          - POST
+          - PUT
+          - DELETE
+          - OPTIONS
+        allowHeaders:
+          - Content-Type
+          - Authorization
+          - X-User-Email
+          - X-Goog-Authenticated-User-Email
+          - x-goog-iap-jwt-assertion
+          - X-Cloud-Trace-Context
+          - X-Workspace-ID
+        maxAge: "3600s"
+        allowCredentials: false
+        disabled: false
+
+  # 5. Operational Probes (/health, /ready, /healthz)
+  - matches:
+      - fullPathMatch: /health
+      - fullPathMatch: /ready
+      - fullPathMatch: /healthz
+    action:
+      destinations:
+        - serviceName: projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/5851800444384313344
+          weight: 100
+      timeout: 10s
+      corsPolicy:
+        allowOrigins:
+          - "*"
+        allowMethods:
+          - GET
+          - OPTIONS
+        allowHeaders:
+          - Content-Type
+          - Authorization
+          - X-Cloud-Trace-Context
+        maxAge: "3600s"
+        allowCredentials: false
+        disabled: false

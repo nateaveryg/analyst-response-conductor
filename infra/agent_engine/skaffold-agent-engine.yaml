@@ -1,0 +1,79 @@
+apiVersion: skaffold/v4beta7
+kind: Config
+metadata:
+  name: conductor-agent-engine
+profiles:
+  - name: dev
+  - name: staging
+  - name: prod
+customActions:
+  - name: render-agent-engine
+    containers:
+      - name: agent-engine-renderer
+        image: us-central1-docker.pkg.dev/riccardo-blog-test-v1/conductor-repo/adk-deployer:latest
+        command:
+          - /bin/bash
+          - -c
+          - |
+            set -euo pipefail
+            echo "Rendering ADK Go agent manifests for target: ${CLOUD_DEPLOY_TARGET:-dev}"
+            echo "target: ${CLOUD_DEPLOY_TARGET:-dev}" > manifest.txt
+            if [ -n "${CLOUD_DEPLOY_OUTPUT_GCS_PATH:-}" ]; then
+              gcloud storage cp manifest.txt "${CLOUD_DEPLOY_OUTPUT_GCS_PATH}/manifest.txt"
+              echo "{\"resultStatus\": \"SUCCEEDED\", \"manifestFile\": \"${CLOUD_DEPLOY_OUTPUT_GCS_PATH}/manifest.txt\"}" > results.json
+              gcloud storage cp results.json "${CLOUD_DEPLOY_OUTPUT_GCS_PATH}/results.json"
+            fi
+  - name: deploy-agent-engine
+    containers:
+      - name: agent-engine-deployer
+        image: us-central1-docker.pkg.dev/riccardo-blog-test-v1/conductor-repo/adk-deployer:latest
+        command:
+          - /bin/bash
+          - -c
+          - |
+            set -euo pipefail
+            for candidate in "." ".." "/workspace" "/workspace/source" "/app"; do
+              if [ -d "$candidate/app/agent_engine_go" ]; then
+                cd "$candidate"
+                break
+              fi
+            done
+            ADK_EXTRA_FLAGS=""
+            if [ "${CLOUD_DEPLOY_TARGET:-dev}" = "dev" ] || [ "${CLOUD_DEPLOY_TARGET:-dev}" = "agent-engine-dev" ]; then
+              ADK_EXTRA_FLAGS="--agent_engine_id=7652483831332601856"
+            elif [ "${CLOUD_DEPLOY_TARGET:-dev}" = "staging" ] || [ "${CLOUD_DEPLOY_TARGET:-dev}" = "agent-engine-staging" ]; then
+              ADK_EXTRA_FLAGS="--agent_engine_id=313868238532378624"
+            elif [ "${CLOUD_DEPLOY_TARGET:-dev}" = "prod" ] || [ "${CLOUD_DEPLOY_TARGET:-dev}" = "agent-engine-prod" ]; then
+              ADK_EXTRA_FLAGS="--agent_engine_id=1423301859237429248"
+            fi
+            adk deploy agentengine \
+              --project_name="${CLOUD_DEPLOY_PROJECT:-${PROJECT_ID:-riccardo-blog-test-v1}}" \
+              --region="${CLOUD_DEPLOY_LOCATION:-${LOCATION:-us-central1}}" \
+              --name="conductor-agent-${CLOUD_DEPLOY_TARGET:-dev}" \
+              --source_dir="./app/agent_engine_go" \
+              --entry_point_path="main.go" \
+              $ADK_EXTRA_FLAGS
+            if [ -n "${CLOUD_DEPLOY_OUTPUT_GCS_PATH:-}" ]; then
+              echo "{\"resultStatus\": \"SUCCEEDED\"}" > results.json
+              gcloud storage cp results.json "${CLOUD_DEPLOY_OUTPUT_GCS_PATH}/results.json"
+            fi
+verify:
+  - name: verify-agent-engine
+    container:
+      name: agent-engine-verifier
+      image: us-central1-docker.pkg.dev/riccardo-blog-test-v1/conductor-repo/adk-deployer:latest
+      command:
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          for candidate in "." ".." "/workspace" "/workspace/source" "/app"; do
+            if [ -f "$candidate/infra/agent_engine/verify_agent_engine.go" ]; then
+              cd "$candidate"
+              break
+            fi
+          done
+          go run ./infra/agent_engine/verify_agent_engine.go \
+            --project="${CLOUD_DEPLOY_PROJECT:-${PROJECT_ID:-riccardo-blog-test-v1}}" \
+            --region="${CLOUD_DEPLOY_LOCATION:-${LOCATION:-us-central1}}" \
+            --target="${CLOUD_DEPLOY_TARGET:-dev}"

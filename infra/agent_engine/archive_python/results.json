@@ -1,0 +1,13 @@
+{
+  "resultStatus": "SUCCEEDED",
+  "artifactFiles": [
+    "/usr/local/google/home/averyn/agentdemos/rficonductorv2/infra/agent_engine/deployed_engine.json"
+  ],
+  "failureMessage": "",
+  "metadata": {
+    "resourceName": "projects/105792947502/locations/us-central1/reasoningEngines/5851800444384313344",
+    "displayName": "Analyst Response Agent (Agent Engine Prod)",
+    "env": "prod",
+    "version": "2.2.0"
+  }
+}

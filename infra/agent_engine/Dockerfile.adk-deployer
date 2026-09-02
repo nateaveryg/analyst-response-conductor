@@ -1,0 +1,23 @@
+# Multi-stage ADK Go Deployer Container for Cloud Deploy Custom Targets
+FROM golang:1.24-bookworm AS builder
+
+ENV GOTOOLCHAIN=auto
+
+# Install ADK CLI
+RUN go install google.golang.org/adk/v2/cmd/adkgo@v2.3.0
+
+FROM gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+
+# Copy Go toolchain and ADK binary
+COPY --from=builder /usr/local/go /usr/local/go
+COPY --from=builder /go/bin/adkgo /usr/local/bin/adk
+COPY --from=builder /go/bin/adkgo /usr/local/bin/adkgo
+
+ENV PATH="/usr/local/go/bin:${PATH}"
+ENV GOTOOLCHAIN=auto
+
+WORKDIR /app
+COPY . /app/
+
+CMD ["/bin/bash"]
+

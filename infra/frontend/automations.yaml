@@ -1,0 +1,37 @@
+apiVersion: deploy.cloud.google.com/v1
+kind: Automation
+metadata:
+  name: conductor-v3-frontend-pipeline/auto-promote-dev-to-staging
+  labels:
+    app: conductor-v3-frontend
+    tier: frontend
+description: Autonomous Release Promotion from Development to Staging for Conductor v3 Frontend
+serviceAccount: 105792947502-compute@developer.gserviceaccount.com
+selector:
+  targets:
+    - id: dev
+rules:
+  - promoteReleaseRule:
+      id: promote-dev-to-staging
+      destinationTargetId: staging
+      wait: 0m
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Automation
+metadata:
+  name: conductor-v3-frontend-pipeline/auto-advance-canary
+  labels:
+    app: conductor-v3-frontend
+    tier: frontend
+description: Autonomous Canary Advancement for Production Rollout after Positive Verification
+serviceAccount: 105792947502-compute@developer.gserviceaccount.com
+selector:
+  targets:
+    - id: prod
+rules:
+  - advanceRolloutRule:
+      id: advance-canary-after-verification
+      sourcePhases:
+        - "canary-25"
+        - "canary-50"
+      wait: 0m

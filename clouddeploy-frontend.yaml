@@ -1,0 +1,127 @@
+apiVersion: deploy.cloud.google.com/v1
+kind: DeliveryPipeline
+metadata:
+  name: conductor-v3-frontend-pipeline
+  labels:
+    app: conductor-v3-frontend
+description: Enterprise Dev2Prod Delivery Pipeline for Analyst Response Agent (Conductor v3 - Flutter Web Nginx Alpine)
+serialPipeline:
+  stages:
+    - targetId: dev
+      profiles:
+        - dev
+      strategy:
+        standard:
+          verify: true
+    - targetId: staging
+      profiles:
+        - staging
+      strategy:
+        standard:
+          verify: true
+    - targetId: prod
+      profiles:
+        - prod
+      strategy:
+        canary:
+          runtimeConfig:
+            cloudRun:
+              automaticTrafficControl: true
+          canaryDeployment:
+            percentages:
+              - 25
+              - 50
+            verify: true
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Target
+metadata:
+  name: dev
+  labels:
+    env: dev
+    app: conductor-v3
+description: Development Environment (Cloud Run - us-central1)
+run:
+  location: projects/riccardo-blog-test-v1/locations/us-central1
+executionConfigs:
+  - usages:
+      - RENDER
+      - DEPLOY
+      - VERIFY
+    serviceAccount: 105792947502-compute@developer.gserviceaccount.com
+    artifactStorage: gs://us-central1.deploy-artifacts.riccardo-blog-test-v1.appspot.com
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Target
+metadata:
+  name: staging
+  labels:
+    env: staging
+    app: conductor-v3
+description: Staging Pre-Production Environment (Cloud Run - us-central1)
+run:
+  location: projects/riccardo-blog-test-v1/locations/us-central1
+executionConfigs:
+  - usages:
+      - RENDER
+      - DEPLOY
+      - VERIFY
+    serviceAccount: 105792947502-compute@developer.gserviceaccount.com
+    artifactStorage: gs://us-central1.deploy-artifacts.riccardo-blog-test-v1.appspot.com
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Target
+metadata:
+  name: prod
+  labels:
+    env: prod
+    app: conductor-v3
+description: Production Environment with Approval Gate and Canary Deployment (Cloud Run - us-central1)
+requireApproval: true
+run:
+  location: projects/riccardo-blog-test-v1/locations/us-central1
+executionConfigs:
+  - usages:
+      - RENDER
+      - DEPLOY
+      - VERIFY
+    serviceAccount: 105792947502-compute@developer.gserviceaccount.com
+    artifactStorage: gs://us-central1.deploy-artifacts.riccardo-blog-test-v1.appspot.com
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Automation
+metadata:
+  name: conductor-v3-frontend-pipeline/auto-promote-dev-to-staging
+  labels:
+    app: conductor-v3-frontend
+    tier: frontend
+description: Autonomous Release Promotion from Development to Staging for Conductor v3 Frontend
+serviceAccount: 105792947502-compute@developer.gserviceaccount.com
+selector:
+  targets:
+    - id: dev
+rules:
+  - promoteReleaseRule:
+      id: promote-dev-to-staging
+      destinationTargetId: staging
+      wait: 0m
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Automation
+metadata:
+  name: conductor-v3-frontend-pipeline/auto-advance-canary
+  labels:
+    app: conductor-v3-frontend
+    tier: frontend
+description: Autonomous Canary Advancement for Production Rollout after Positive Verification
+serviceAccount: 105792947502-compute@developer.gserviceaccount.com
+selector:
+  targets:
+    - id: prod
+rules:
+  - advanceRolloutRule:
+      id: advance-canary-after-verification
+      sourcePhases:
+        - "canary-25"
+        - "canary-50"
+      wait: 0m

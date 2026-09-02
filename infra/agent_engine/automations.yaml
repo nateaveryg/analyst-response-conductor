@@ -1,0 +1,35 @@
+apiVersion: deploy.cloud.google.com/v1
+kind: Automation
+metadata:
+  name: conductor-agent-engine-pipeline/auto-promote-dev-to-staging
+  labels:
+    app: conductor-v2
+    runtime: agent-engine
+description: Autonomous Release Promotion from Development to Staging
+serviceAccount: 105792947502-compute@developer.gserviceaccount.com
+selector:
+  targets:
+    - id: agent-engine-dev
+rules:
+  - promoteReleaseRule:
+      id: promote-dev-to-staging
+      destinationTargetId: agent-engine-staging
+      wait: 0m
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Automation
+metadata:
+  name: conductor-agent-engine-pipeline/auto-promote-staging-to-prod
+  labels:
+    app: conductor-v2
+    runtime: agent-engine
+description: Autonomous Release Promotion from Staging to Production
+serviceAccount: 105792947502-compute@developer.gserviceaccount.com
+selector:
+  targets:
+    - id: agent-engine-staging
+rules:
+  - promoteReleaseRule:
+      id: promote-staging-to-prod
+      destinationTargetId: agent-engine-prod
+      wait: 0m

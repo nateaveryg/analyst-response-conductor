@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base href="$FLUTTER_BASE_HREF">
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="The Conductor v3 - Google Cloud Analyst Response Agent">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="The Conductor v3">
+  <title>The Conductor v3 - Analyst Response Agent (ARA) - A2UI Executive Portal</title>
+  <link rel="manifest" href="manifest.json">
+  <style>
+    body {
+      background-color: #0F172A;
+      margin: 0;
+      padding: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: #94A3B8;
+    }
+    .loading-container {
+      text-align: center;
+    }
+    .spinner {
+      border: 3px solid rgba(138, 180, 248, 0.2);
+      border-top: 3px solid #8AB4F8;
+      border-radius: 50%;
+      width: 36px;
+      height: 36px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    #error-boundary {
+      display: none;
+      width: 100%;
+      max-width: 640px;
+      padding: 20px;
+      box-sizing: border-box;
+    }
+    .diagnostics-log {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .diagnostics-entry {
+      background-color: #1E293B;
+      color: #F8FAFC;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 11px;
+      border: 1px solid #334155;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="loading-container">
+    <div class="spinner"></div>
+    <div style="font-size: 14px; font-weight: 600; color: #FFFFFF;">Initializing Conductor v3 WebAssembly Engine...</div>
+    <div style="font-size: 11px; margin-top: 4px;">Loading Google Cloud Agent Architecture</div>
+  </div>
+
+  <div id="error-boundary"></div>
+
+  <script>
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function appendMessage(role, text) {
+      console.log('[' + role + '] ' + text);
+      const boundary = document.getElementById('error-boundary');
+      if (!boundary) return;
+      let logContainer = document.getElementById('diagnostics-log');
+      if (!logContainer) {
+        logContainer = document.createElement('div');
+        logContainer.id = 'diagnostics-log';
+        logContainer.className = 'diagnostics-log';
+        boundary.appendChild(logContainer);
+      }
+      const entry = document.createElement('div');
+      entry.className = 'diagnostics-entry';
+      entry.textContent = '[' + role + '] ' + text;
+      logContainer.appendChild(entry);
+      boundary.style.display = 'block';
+    }
+
+    function renderClientError(err, contextMsg) {
+      const loadingEl = document.getElementById('loading');
+      if (loadingEl) loadingEl.style.display = 'none';
+
+      const boundary = document.getElementById('error-boundary');
+      if (!boundary) return;
+
+      const header = contextMsg || 'Failed to render A2UI surface:';
+      const detail = err ? (err.message || String(err)) : 'Unknown initialization failure';
+
+      const card = document.createElement('div');
+      card.className = 'bg-red-50 text-red-700 p-3 rounded-xl text-xs border border-red-200';
+      card.style.backgroundColor = '#FEF2F2';
+      card.style.color = '#B91C1C';
+      card.style.padding = '16px';
+      card.style.borderRadius = '12px';
+      card.style.border = '1px solid #FECACA';
+      card.style.fontSize = '12px';
+      card.style.lineHeight = '1.5';
+      card.style.boxShadow = '0 4px 6px -1px rgba(0, 0, 0, 0.1)';
+
+      card.innerHTML =
+        '<div style="font-weight: 700; font-size: 13px; margin-bottom: 6px;">' +
+        escapeHtml(header) +
+        '</div>' +
+        '<div style="font-family: monospace; word-break: break-word;">' +
+        escapeHtml(detail) +
+        '</div>' +
+        '<div style="margin-top: 14px;">' +
+        '<button onclick="window.location.reload()" style="background-color: #DC2626; color: #FFFFFF; border: none; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; cursor: pointer;">' +
+        'Retry Initialization' +
+        '</button>' +
+        '</div>';
+
+      boundary.prepend(card);
+      boundary.style.display = 'block';
+    }
+
+    function handleEngineConnectionError(err) {
+      const errDetail = err && err.message ? err.message : String(err);
+      const connErrMsg = '⚠️ Error connecting to Cloud Run A2UI engine: ' + errDetail;
+      console.error(connErrMsg);
+      appendMessage('agent', connErrMsg);
+      renderClientError(err, 'Failed to render A2UI surface:');
+    }
+
+    // Capture script and resource load failures on the page
+    window.addEventListener('error', function(event) {
+      const target = event.target;
+      if (target && (target.tagName === 'SCRIPT' || target.tagName === 'LINK')) {
+        handleEngineConnectionError(new Error('Failed to load asset: ' + (target.src || target.href || 'unknown source')));
+      } else if (event.message) {
+        renderClientError(new Error(event.message));
+      }
+    }, true);
+
+    // Capture unhandled promise rejections during bootstrap or API queries
+    window.addEventListener('unhandledrejection', function(event) {
+      const reason = event.reason;
+      handleEngineConnectionError(reason instanceof Error ? reason : new Error(String(reason)));
+    });
+
+    // Timeout watchdog for Flutter initialization
+    const bootstrapWatchdog = setTimeout(function() {
+      const flutterLoaded = document.querySelector('flt-glass-pane') || document.querySelector('flutter-view');
+      if (!flutterLoaded) {
+        handleEngineConnectionError(new Error('Flutter Web engine initialization timed out after 20 seconds.'));
+      }
+    }, 20000);
+
+    window.addEventListener('flutter-first-frame', function() {
+      clearTimeout(bootstrapWatchdog);
+      const loadingEl = document.getElementById('loading');
+      if (loadingEl) loadingEl.style.display = 'none';
+    });
+  </script>
+  <script src="flutter_bootstrap.js" async onerror="handleEngineConnectionError(new Error('Failed to load flutter_bootstrap.js from Cloud Run host'))"></script>
+</body>
+</html>

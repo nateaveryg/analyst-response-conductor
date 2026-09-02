@@ -1,0 +1,47 @@
+apiVersion: skaffold/v4beta7
+kind: Config
+metadata:
+  name: conductor-v3-frontend
+build:
+  artifacts:
+    - image: conductor-v3-frontend
+      context: .
+      docker:
+        dockerfile: Dockerfile.frontend
+manifests:
+  rawYaml:
+    - infra/cloudrun/service-frontend-dev.yaml
+deploy:
+  cloudrun: {}
+profiles:
+  - name: dev
+    manifests:
+      rawYaml:
+        - infra/cloudrun/service-frontend-dev.yaml
+  - name: staging
+    manifests:
+      rawYaml:
+        - infra/cloudrun/service-frontend-staging.yaml
+  - name: prod
+    manifests:
+      rawYaml:
+        - infra/cloudrun/service-frontend-prod.yaml
+verify:
+  - name: verify-frontend
+    container:
+      name: frontend-verifier
+      image: us-central1-docker.pkg.dev/riccardo-blog-test-v1/conductor-repo/agent-engine-deployer:slim
+      command:
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          for candidate in "." ".." "/workspace" "/workspace/source" "/app"; do
+            if [ -f "$candidate/infra/frontend/verify_frontend.py" ]; then
+              cd "$candidate"
+              break
+            fi
+          done
+          python3 infra/frontend/verify_frontend.py \
+            --project="${PROJECT_ID:-riccardo-blog-test-v1}" \
+            --location="${LOCATION:-us-central1}"

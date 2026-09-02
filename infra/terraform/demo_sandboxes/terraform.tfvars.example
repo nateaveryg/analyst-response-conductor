@@ -1,0 +1,8 @@
+# Example parameter definitions for Phase 5 Demo Sandbox Infrastructure
+# Rename to terraform.tfvars or pass via -var-file flag during deployment
+
+project_id         = "riccardo-blog-test-v1"
+region             = "us-central1"
+environment_prefix = "analyst-demo"
+gke_cluster_name   = "cnap-autopilot-mesh"
+artifact_repo_name = "secure-slsa-repo"

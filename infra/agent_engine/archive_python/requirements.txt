@@ -1,0 +1,7 @@
+--extra-index-url https://us-central1-python.pkg.dev/riccardo-blog-test-v1/python-pypi/simple/
+google-cloud-aiplatform[agent_engines]>=1.70.0
+google-cloud-storage>=2.14.0
+google-genai>=0.1.0
+cloudpickle>=3.0.0
+pydantic>=2.0.0
+typing-extensions>=4.9.0

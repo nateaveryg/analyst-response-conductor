@@ -1,0 +1,115 @@
+# /etc/nginx/templates/default.conf.template
+# Optimized Nginx Configuration for Conductor v3 Flutter Web (WASM & CanvasKit)
+
+server {
+    listen ${PORT};
+    server_name _;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # DNS resolver for dynamic runtime upstream resolution (prevents startup crash when gateway is unprovisioned)
+    resolver 8.8.8.8 8.8.4.4 169.254.169.254 valid=300s ipv6=off;
+
+    # Explicit MIME types for WebAssembly, Modern JavaScript, and Web Fonts
+    include /etc/nginx/mime.types;
+    types {
+        application/wasm                      wasm;
+        application/javascript                js mjs;
+        application/json                      json map;
+        font/woff2                            woff2;
+        font/otf                              otf;
+        font/ttf                              ttf;
+    }
+
+    # High-Performance Gzip Compression Engine
+    gzip on;
+    gzip_vary on;
+    gzip_proxied any;
+    gzip_comp_level 6;
+    gzip_min_length 256;
+    gzip_types
+        text/plain
+        text/css
+        text/xml
+        text/javascript
+        application/json
+        application/javascript
+        application/x-javascript
+        application/wasm
+        application/xml
+        application/xml+rss
+        image/svg+xml
+        font/woff2
+        font/otf;
+
+    # Enterprise Security Headers
+    add_header X-Frame-Options "DENY" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
+    # Cross-Origin Headers for WebAssembly multithreaded acceleration
+    add_header Cross-Origin-Embedder-Policy "credentialless" always;
+    add_header Cross-Origin-Opener-Policy "same-origin" always;
+
+    # Dedicated Cloud Run Liveness and Startup Probe Endpoints
+    location /healthz {
+        access_log off;
+        return 200 'healthy\n';
+        add_header Content-Type text/plain;
+    }
+
+    location /health {
+        access_log off;
+        return 200 'healthy\n';
+        add_header Content-Type text/plain;
+    }
+
+    # Dynamic Runtime Configuration for Agent Gateway
+    location = /config.json {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+        add_header Content-Type "application/json";
+    }
+
+    # Static Entrypoint Files — Never cache bootstrap assets
+    location = /index.html {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+
+    location = /flutter_bootstrap.js {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+
+    location = /version.json {
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+
+    # Aggressive Caching for Immutable Static Assets (1 Year)
+    location ~* \.(?:wasm|js|mjs|css|png|jpg|jpeg|gif|ico|svg|woff2?|otf|ttf)$ {
+        try_files $uri =404;
+        expires 1y;
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    # SPA Fallback Routing for Client-Side Flutter Navigation
+    location / {
+        try_files $uri $uri/ /index.html;
+        add_header Cache-Control "no-cache, no-store, must-revalidate";
+    }
+
+    # Reverse Proxy to Agent Platform Agent Gateway (Failsafe Same-Origin Mode)
+    location /api/ {
+        set $agent_gateway_url "${AGENT_GATEWAY_URL}";
+        proxy_pass $agent_gateway_url;
+        proxy_ssl_server_name on;
+        proxy_ssl_protocols TLSv1.2 TLSv1.3;
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 10s;
+    }
+}

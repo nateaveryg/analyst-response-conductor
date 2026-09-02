@@ -1,0 +1,15 @@
+{
+  "status": "OPERATIONAL",
+  "tiers": {
+    "dev": "projects/105792947502/locations/us-central1/reasoningEngines/7652483831332601856",
+    "staging": "projects/105792947502/locations/us-central1/reasoningEngines/313868238532378624",
+    "prod": "projects/105792947502/locations/us-central1/reasoningEngines/1423301859237429248"
+  },
+  "resource_name": "projects/105792947502/locations/us-central1/reasoningEngines/1423301859237429248",
+  "display_name": "conductor-agent-agent-engine-prod",
+  "env": "prod",
+  "project": "riccardo-blog-test-v1",
+  "location": "us-central1",
+  "version": "3.2.0-adk-go",
+  "deployed_at": "2026-09-02T02:48:36Z"
+}

@@ -1,0 +1,63 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: conductor-v3-frontend-prod
+  labels:
+    app: conductor-v3-frontend
+    env: prod
+    tier: frontend
+    runtime: nginx-alpine
+  annotations:
+    run.googleapis.com/ingress: all
+    run.googleapis.com/launch-stage: GA
+spec:
+  template:
+    metadata:
+      labels:
+        app: conductor-v3-frontend
+        env: prod
+        tier: frontend
+      annotations:
+        run.googleapis.com/client.name: cloud-deploy
+        run.googleapis.com/cpu-throttling: "true"
+        run.googleapis.com/startup-cpu-boost: "true"
+        autoscaling.knative.dev/minScale: "1"
+        autoscaling.knative.dev/maxScale: "20"
+    spec:
+      containerConcurrency: 250
+      timeoutSeconds: 300
+      containers:
+        - name: frontend
+          image: conductor-v3-frontend
+          ports:
+            - name: http1
+              containerPort: 8080
+          resources:
+            limits:
+              cpu: "1000m"
+              memory: "256Mi"
+          env:
+            - name: ENVIRONMENT
+              value: "production"
+            - name: SERVICE_VERSION
+              value: "3.3.1"
+            - name: VERIFICATION_MARKER
+              value: "v3.3.1-verified"
+            - name: AGENT_GATEWAY_URL
+              value: "https://conductor-v3-prod-4izasuhqpq-uc.a.run.app"
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 1
+            periodSeconds: 5
+            failureThreshold: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+            timeoutSeconds: 3

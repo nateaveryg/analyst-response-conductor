@@ -1,0 +1,17 @@
+# Declarative Resource Manifest: Agent Platform Agent Gateway
+# Ingress Mode: Client-to-Agent (CLIENT_TO_AGENT)
+# Target Project: riccardo-blog-test-v1
+# Target Location: us-central1
+
+name: projects/riccardo-blog-test-v1/locations/us-central1/agentGateways/conductor-v3-ingress-gateway
+description: "Agent Platform Agent Gateway in Client-to-Agent ingress mode for The Conductor v3"
+labels:
+  app: conductor-v3
+  runtime: agent-engine
+  environment: prod
+  managed-by: agent-platform
+  tier: ingress-governance
+googleManaged:
+  governedAccessPath: CLIENT_TO_AGENT
+registries:
+  - //agentregistry.googleapis.com/projects/riccardo-blog-test-v1/locations/us-central1

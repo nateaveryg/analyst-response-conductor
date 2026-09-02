@@ -1,0 +1,9 @@
+# Ultra-lightweight Custom Target Runner for Vertex AI Agent Engine (<140MB)
+FROM us-central1-docker.pkg.dev/riccardo-blog-test-v1/conductor-repo/agent-engine-deployer:slim
+
+WORKDIR /app
+
+# Copy all latest source and infrastructure files including verify_frontend.py
+COPY . /app/
+
+CMD ["/bin/bash"]

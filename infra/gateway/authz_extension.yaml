@@ -1,0 +1,17 @@
+# Declarative Resource Manifest: Service Extensions AuthzExtension
+# Wire Format: EXT_PROC_GRPC (failOpen: false)
+# Service: modelarmor.googleapis.com
+# Target Project: riccardo-blog-test-v1
+# Target Location: us-central1
+
+name: projects/riccardo-blog-test-v1/locations/us-central1/authzExtensions/conductor-model-armor-ext
+description: "Callout extension to Model Armor for inline prompt and response screening"
+service: modelarmor.googleapis.com
+failOpen: false
+timeout: 5s
+wireFormat: EXT_PROC_GRPC
+labels:
+  app: conductor-v3
+  security: model-armor-dlp
+  governance: inline-content-authz
+  managed-by: agent-platform

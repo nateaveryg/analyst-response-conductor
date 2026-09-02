@@ -1,0 +1,64 @@
+steps:
+  # Step 1: Run Hermetic Unit, Integration, Playwright UI & Adversarial Red-Team Tests
+  - name: 'mcr.microsoft.com/playwright/python:v1.49.0-noble'
+    id: 'unit-and-ui-tests'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        pip install --no-cache-dir --extra-index-url https://us-central1-python.pkg.dev/riccardo-blog-test-v1/python-pypi/simple/ -r requirements.txt pytest pytest-asyncio
+        pytest tests/test_ui_adversarial_agent.py -v
+        pytest tests/ -v
+
+  # Step 2: Build Container Image via Docker
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-container-image'
+    args:
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${COMMIT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:latest'
+      - '.'
+
+  # Step 3: Push Immutable Container Image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-to-artifact-registry'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${COMMIT_SHA}'
+
+  # Step 4: Push Latest Tag to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-latest-tag'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:latest'
+
+  # Step 5: Create Google Cloud Deploy Release for Automated Stage Progression
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'create-cloud-deploy-release'
+    entrypoint: 'gcloud'
+    args:
+      - 'deploy'
+      - 'releases'
+      - 'create'
+      - 'release-${SHORT_SHA}'
+      - '--delivery-pipeline=${_DELIVERY_PIPELINE_NAME}'
+      - '--region=${_REGION}'
+      - '--images=${_SERVICE_NAME}=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${COMMIT_SHA}'
+      - '--annotations=commitId=${COMMIT_SHA},trigger=cloudbuild'
+
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${COMMIT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:latest'
+
+substitutions:
+  _REGION: 'us-central1'
+  _REPO_NAME: 'conductor-repo'
+  _SERVICE_NAME: 'conductor-v2'
+  _DELIVERY_PIPELINE_NAME: 'conductor-v2-pipeline'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  substitution_option: 'ALLOW_LOOSE'

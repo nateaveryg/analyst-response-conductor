@@ -1,0 +1,39 @@
+apiVersion: skaffold/v4beta7
+kind: Config
+metadata:
+  name: conductor-v2
+build:
+  artifacts:
+    - image: conductor-v2
+      context: .
+      docker:
+        dockerfile: Dockerfile
+manifests:
+  rawYaml:
+    - infra/cloudrun/service.yaml
+deploy:
+  cloudrun: {}
+profiles:
+  - name: dev
+    manifests:
+      rawYaml:
+        - infra/cloudrun/service-dev.yaml
+  - name: staging
+    manifests:
+      rawYaml:
+        - infra/cloudrun/service-staging.yaml
+  - name: prod
+    manifests:
+      rawYaml:
+        - infra/cloudrun/service.yaml
+customActions:
+  - name: postdeploy-e2e-test
+    containers:
+      - name: postdeploy-test-runner
+        image: conductor-v2
+        command:
+          - /bin/bash
+          - -c
+          - |
+            cd /app
+            python infra/ci_cd/run_post_deploy_verification.py

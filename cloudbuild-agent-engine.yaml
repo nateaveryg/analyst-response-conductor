@@ -1,0 +1,66 @@
+steps:
+  # Step 0: Run Go ADK Agent Unit & Migration Tests
+  - name: 'golang:1.24-bookworm'
+    id: 'go-adk-agent-tests'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        export GOTOOLCHAIN=auto
+        cd app/agent_engine_go
+        go test -v ./...
+
+  # Step: Build & Push ADK Deployer Image for Cloud Deploy Custom Targets
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-and-push-adk-deployer'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        docker build \
+          -f infra/agent_engine/Dockerfile.adk-deployer \
+          -t "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/adk-deployer:latest" \
+          .
+        docker push "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/adk-deployer:latest"
+
+  # Step: Declaratively Apply / Synchronize Cloud Deploy Delivery Pipeline & Custom Targets
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'apply-cloud-deploy-pipeline'
+    entrypoint: 'gcloud'
+    args:
+      - 'deploy'
+      - 'apply'
+      - '--file=clouddeploy-agent-engine.yaml'
+      - '--region=${_REGION}'
+      - '--project=${PROJECT_ID}'
+
+  # Step: Create Google Cloud Deploy Release for Automated Stage Progression across Agent Engine Tiers
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'create-cloud-deploy-release'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        SHORT_ID="$${SHORT_SHA:-$$(echo '${BUILD_ID}' | cut -c1-8)}"
+        gcloud deploy releases create "release-ae-$${SHORT_ID}" \
+          --delivery-pipeline="${_DELIVERY_PIPELINE_NAME}" \
+          --region="${_REGION}" \
+          --skaffold-file=infra/agent_engine/skaffold-agent-engine.yaml \
+          --source=. \
+          --annotations="commitId=${BUILD_ID},runtime=agent-engine-adk-go,trigger=cloudbuild"
+
+substitutions:
+  _REGION: 'us-central1'
+  _REPO_NAME: 'conductor-repo'
+  _DELIVERY_PIPELINE_NAME: 'conductor-agent-engine-pipeline'
+
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/adk-deployer:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  substitution_option: 'ALLOW_LOOSE'
+  requestedVerifyOption: 'VERIFIED'

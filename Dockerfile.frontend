@@ -1,0 +1,23 @@
+# Ultra-lightweight Nginx Alpine Runtime for Conductor v3 Frontend (<20MB)
+FROM nginx:1.27-alpine-slim
+
+# Remove default nginx html and configuration
+RUN rm -rf /usr/share/nginx/html/* /etc/nginx/conf.d/*
+
+# Copy compiled Flutter Web assets into /usr/share/nginx/html/ (preserving 755 file modes)
+COPY frontend/build/web/ /usr/share/nginx/html/
+
+# Copy Nginx template into /etc/nginx/templates/default.conf.template
+COPY infra/frontend/nginx.conf.template /etc/nginx/templates/default.conf.template
+
+# Default Cloud Run dynamic port and gateway environment configuration
+ENV PORT=8080
+ENV AGENT_GATEWAY_URL="https://conductor-v3-prod-4izasuhqpq-uc.a.run.app"
+ENV SERVICE_VERSION=3.3.1
+ENV VERIFICATION_MARKER=v3.3.1-verified
+
+EXPOSE 8080
+
+STOPSIGNAL SIGQUIT
+
+CMD ["nginx", "-g", "daemon off;"]

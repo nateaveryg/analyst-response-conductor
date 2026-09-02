@@ -1,0 +1,142 @@
+steps:
+  # Step 1: Pre-pull Base Nginx Alpine Image with Retries
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'pull-base-image'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        for i in 1 2 3; do
+          docker pull nginx:1.27-alpine-slim && break || sleep 5
+        done
+
+  # Step 2: Build Nginx Alpine Frontend Container Image
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-frontend-image'
+    args:
+      - 'build'
+      - '-f'
+      - 'Dockerfile.frontend'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${_COMMIT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:latest'
+      - '.'
+
+  # Step 3: Verify Image Size Constraint (< 20MB Compressed)
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'verify-image-size'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        IMAGE="${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${_COMMIT_SHA}"
+        SIZE_BYTES=$$(docker save "$$IMAGE" | gzip -c | wc -c)
+        MAX_BYTES=20971520 # 20MB
+        echo "=========================================================================="
+        echo "Container Image: $$IMAGE"
+        echo "Measured Compressed Size: $$SIZE_BYTES bytes ($$((SIZE_BYTES / 1024 / 1024)) MB)"
+        echo "Size Budget Ceiling:      $$MAX_BYTES bytes (20 MB)"
+        echo "=========================================================================="
+        if [ "$$SIZE_BYTES" -ge "$$MAX_BYTES" ]; then
+          echo "FAIL: Container image exceeds 20MB ceiling!"
+          exit 1
+        fi
+        echo "PASS: Container image strictly complies with < 20MB requirement."
+
+  # Step 4: Push Immutable Container Image Tag to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-immutable-tag'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${_COMMIT_SHA}'
+
+  # Step 5: Push Latest Tag to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-latest-tag'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:latest'
+
+  # Step: Generate Software Bill of Materials (SBOM) in SPDX 2.3 Format
+  - name: 'anchore/syft:v1.18.1'
+    id: 'generate-sbom'
+    args:
+      - 'scan'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${_COMMIT_SHA}'
+      - '-o'
+      - 'spdx-json=sbom.spdx.json'
+
+  # Step: Register SBOM Occurrence in Artifact Analysis via Cloud SDK
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'upload-sbom'
+    entrypoint: 'gcloud'
+    args:
+      - 'artifacts'
+      - 'sbom'
+      - 'load'
+      - '--source=sbom.spdx.json'
+      - '--uri=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${_COMMIT_SHA}'
+
+  # Step 6: Declaratively Apply Cloud Deploy Delivery Pipeline & Automations
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'apply-cloud-deploy-pipeline'
+    entrypoint: 'gcloud'
+    args:
+      - 'deploy'
+      - 'apply'
+      - '--file=clouddeploy-frontend.yaml'
+      - '--region=${_REGION}'
+      - '--project=${PROJECT_ID}'
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'apply-frontend-automations'
+    entrypoint: 'gcloud'
+    args:
+      - 'deploy'
+      - 'apply'
+      - '--file=infra/frontend/automations.yaml'
+      - '--region=${_REGION}'
+      - '--project=${PROJECT_ID}'
+
+  # Step 7: Create Google Cloud Deploy Release for Automated Stage Progression
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'create-cloud-deploy-release'
+    entrypoint: 'gcloud'
+    args:
+      - 'deploy'
+      - 'releases'
+      - 'create'
+      - 'release-fe-${BUILD_ID}'
+      - '--delivery-pipeline=${_DELIVERY_PIPELINE_NAME}'
+      - '--region=${_REGION}'
+      - '--skaffold-file=skaffold-frontend.yaml'
+      - '--source=.'
+      - '--images=${_SERVICE_NAME}=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${_COMMIT_SHA}'
+      - '--annotations=commitId=${_COMMIT_SHA},runtime=nginx-alpine,trigger=cloudbuild'
+
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${_COMMIT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:latest'
+
+artifacts:
+  objects:
+    location: 'gs://${PROJECT_ID}_cloudbuild/sboms/${BUILD_ID}'
+    paths:
+      - 'sbom.spdx.json'
+
+substitutions:
+  _REGION: 'us-central1'
+  _REPO_NAME: 'conductor-repo'
+  _SERVICE_NAME: 'conductor-v3-frontend'
+  _DELIVERY_PIPELINE_NAME: 'conductor-v3-frontend-pipeline'
+  _COMMIT_SHA: 'manual'
+  _SHORT_SHA: 'manual'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  substitution_option: 'ALLOW_LOOSE'
+  machineType: 'E2_HIGHCPU_8'
+  requestedVerifyOption: 'VERIFIED'

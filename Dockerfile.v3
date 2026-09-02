@@ -1,0 +1,37 @@
+# Multi-stage Distroless Build for The Conductor v3 (Unified Flutter Web & Go Backend)
+
+# Stage 1: Hermetic Flutter Web compilation (WASM & CanvasKit)
+FROM ghcr.io/cirruslabs/flutter:3.24.5 AS flutter-builder
+WORKDIR /app
+COPY frontend/ .
+RUN git config --global --add safe.directory '*' || true
+RUN flutter pub get && flutter build web --wasm --release
+
+# Stage 2: Static Go binary build
+FROM golang:1.24-bookworm AS go-builder
+WORKDIR /app
+COPY backend/ .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=vendor \
+    -ldflags="-s -w -extldflags '-static'" \
+    -o /app/conductor-server ./cmd/server
+
+# Stage 3: Minimal Distroless scratch runtime
+FROM gcr.io/distroless/static-debian12:nonroot
+USER nonroot:nonroot
+WORKDIR /
+
+# Copy static compiled binary
+COPY --from=go-builder /app/conductor-server /app/conductor-server
+COPY --from=go-builder /app/conductor-server /conductor-server
+
+# Copy compiled Flutter web assets to /app/web
+COPY --from=flutter-builder /app/build/web /app/web
+
+EXPOSE 8080
+ENV PORT=8080
+ENV GIN_MODE=release
+ENV WEB_DIR=/app/web
+ENV SERVICE_VERSION=3.3.2
+ENV VERIFICATION_MARKER=v3.3.2-verified
+
+ENTRYPOINT ["/app/conductor-server"]

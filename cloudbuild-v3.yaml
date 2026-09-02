@@ -1,0 +1,127 @@
+steps:
+  # Step 1: Run Go Backend Tests & Python E2E Integration Suite
+  - name: 'golang:1.24-bookworm'
+    id: 'go-backend-tests'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        cd backend
+        go test -mod=vendor -v ./...
+
+  # Step 2: Pre-pull Base Images with Retries to eliminate registry handshake timeouts
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'pull-base-images'
+    entrypoint: 'bash'
+    args:
+      - '-c'
+      - |
+        set -euo pipefail
+        for i in 1 2 3; do
+          docker pull ghcr.io/cirruslabs/flutter:3.24.5 && break || sleep 5
+        done
+        for i in 1 2 3; do
+          docker pull golang:1.24-bookworm && break || sleep 5
+        done
+        for i in 1 2 3; do
+          docker pull gcr.io/distroless/static-debian12:nonroot && break || sleep 5
+        done
+
+  # Step 3: Build Multi-Stage Distroless Container Image
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build-container-image'
+    args:
+      - 'build'
+      - '-f'
+      - 'Dockerfile.v3'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${_COMMIT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:latest'
+      - '.'
+
+  # Step 3: Push Immutable Container Image to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-to-artifact-registry'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${_COMMIT_SHA}'
+
+  # Step 4: Push Latest Tag to Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-latest-tag'
+    args:
+      - 'push'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:latest'
+
+  # Step: Generate Software Bill of Materials (SBOM) in SPDX 2.3 Format
+  - name: 'anchore/syft:v1.18.1'
+    id: 'generate-sbom'
+    args:
+      - 'scan'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${_COMMIT_SHA}'
+      - '-o'
+      - 'spdx-json=sbom.spdx.json'
+
+  # Step: Register SBOM Occurrence in Artifact Analysis via Cloud SDK
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'upload-sbom'
+    entrypoint: 'gcloud'
+    args:
+      - 'artifacts'
+      - 'sbom'
+      - 'load'
+      - '--source=sbom.spdx.json'
+      - '--uri=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${_COMMIT_SHA}'
+
+  # Step 5: Declaratively Apply / Synchronize Cloud Deploy Delivery Pipeline
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'apply-cloud-deploy-pipeline'
+    entrypoint: 'gcloud'
+    args:
+      - 'deploy'
+      - 'apply'
+      - '--file=clouddeploy-v3.yaml'
+      - '--region=${_REGION}'
+      - '--project=${PROJECT_ID}'
+
+  # Step 6: Create Google Cloud Deploy Release for Automated Stage Progression
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk:slim'
+    id: 'create-cloud-deploy-release'
+    entrypoint: 'gcloud'
+    args:
+      - 'deploy'
+      - 'releases'
+      - 'create'
+      - 'release-v3-${BUILD_ID}'
+      - '--delivery-pipeline=${_DELIVERY_PIPELINE_NAME}'
+      - '--region=${_REGION}'
+      - '--skaffold-file=skaffold-v3.yaml'
+      - '--source=.'
+      - '--images=${_SERVICE_NAME}=${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${_COMMIT_SHA}'
+      - '--annotations=commitId=${_COMMIT_SHA},runtime=go-cloud-run,trigger=cloudbuild'
+
+images:
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:${_COMMIT_SHA}'
+  - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/${_SERVICE_NAME}:latest'
+
+artifacts:
+  objects:
+    location: 'gs://${PROJECT_ID}_cloudbuild/sboms/${BUILD_ID}'
+    paths:
+      - 'sbom.spdx.json'
+
+substitutions:
+  _REGION: 'us-central1'
+  _REPO_NAME: 'conductor-repo'
+  _SERVICE_NAME: 'conductor-v3'
+  _DELIVERY_PIPELINE_NAME: 'conductor-v3-pipeline'
+  _COMMIT_SHA: 'v3-3-2'
+  _SHORT_SHA: 'v3-3-2'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  substitution_option: 'ALLOW_LOOSE'
+  machineType: 'E2_HIGHCPU_8'
+  requestedVerifyOption: 'VERIFIED'

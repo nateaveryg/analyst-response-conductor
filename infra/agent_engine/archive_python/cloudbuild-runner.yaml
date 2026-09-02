@@ -1,0 +1,17 @@
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-f"
+      - "infra/agent_engine/Dockerfile.runner"
+      - "-t"
+      - "us-central1-docker.pkg.dev/riccardo-blog-test-v1/conductor-repo/agent-engine-deployer:slim"
+      - "."
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "us-central1-docker.pkg.dev/riccardo-blog-test-v1/conductor-repo/agent-engine-deployer:slim"
+images:
+  - "us-central1-docker.pkg.dev/riccardo-blog-test-v1/conductor-repo/agent-engine-deployer:slim"
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -1,0 +1,14 @@
+{
+  "status": "VALIDATED",
+  "resource_name": "projects/riccardo-blog-test-v1/locations/us-central1/agentGateways/conductor-v3-ingress-gateway",
+  "gateway_id": "conductor-v3-ingress-gateway",
+  "governed_access_path": "CLIENT_TO_AGENT",
+  "ingress_endpoint": "https://conductor-gateway-105792947502.us-central1.rep.cloud.google.com",
+  "env": "prod",
+  "project": "riccardo-blog-test-v1",
+  "location": "us-central1",
+  "model_armor_extension": "projects/riccardo-blog-test-v1/locations/us-central1/authzExtensions/conductor-model-armor-ext",
+  "content_authz_policy": "projects/riccardo-blog-test-v1/locations/us-central1/authzPolicies/conductor-ingress-content-authz",
+  "route_rules": "projects/riccardo-blog-test-v1/locations/global/httpRoutes/conductor-v3-gateway-routes",
+  "deployed_at": "2026-09-02T20:00:34Z"
+}

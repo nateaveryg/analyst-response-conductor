@@ -1,0 +1,21 @@
+# Declarative Resource Manifest: Network Security AuthzPolicy
+# Policy Profile: CONTENT_AUTHZ (action: CUSTOM)
+# Enforces inline Model Armor DLP via AuthzExtension
+# Target Project: riccardo-blog-test-v1
+# Target Location: us-central1
+
+name: projects/riccardo-blog-test-v1/locations/us-central1/authzPolicies/conductor-ingress-content-authz
+description: "Content authorization policy enforcing Model Armor templates on ingress traffic"
+target:
+  resources:
+    - projects/riccardo-blog-test-v1/locations/us-central1/agentGateways/conductor-v3-ingress-gateway
+policyProfile: CONTENT_AUTHZ
+action: CUSTOM
+customProvider:
+  authzExtension:
+    resources:
+      - projects/riccardo-blog-test-v1/locations/us-central1/authzExtensions/conductor-model-armor-ext
+labels:
+  app: conductor-v3
+  security: content-authz
+  managed-by: agent-platform

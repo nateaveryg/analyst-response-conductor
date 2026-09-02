@@ -1,0 +1,104 @@
+apiVersion: deploy.cloud.google.com/v1
+kind: DeliveryPipeline
+metadata:
+  name: conductor-agent-engine-pipeline
+  labels:
+    app: conductor-v2
+    runtime: agent-engine
+description: Enterprise Continuous Delivery Pipeline for Conductor v2 on Vertex AI Agent Engine (Reasoning Engine)
+serialPipeline:
+  stages:
+    - targetId: agent-engine-dev
+      profiles:
+        - dev
+      strategy:
+        standard:
+          verify: true
+    - targetId: agent-engine-staging
+      profiles:
+        - staging
+      strategy:
+        standard:
+          verify: true
+    - targetId: agent-engine-prod
+      profiles:
+        - prod
+      strategy:
+        standard:
+          verify: true
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: CustomTargetType
+metadata:
+  name: vertex-ai-agent-engine
+  labels:
+    runtime: agent-engine
+    app: conductor-v2
+description: Custom Target Type for Vertex AI Agent Engine (Reasoning Engine) deployments
+customActions:
+  renderAction: render-agent-engine
+  deployAction: deploy-agent-engine
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Target
+metadata:
+  name: agent-engine-dev
+  labels:
+    env: dev
+    runtime: agent-engine
+    app: conductor-v2
+description: Development Environment (Vertex AI Agent Engine - us-central1)
+customTarget:
+  customTargetType: projects/riccardo-blog-test-v1/locations/us-central1/customTargetTypes/vertex-ai-agent-engine
+executionConfigs:
+  - usages:
+      - RENDER
+      - DEPLOY
+      - VERIFY
+      - PREDEPLOY
+      - POSTDEPLOY
+    serviceAccount: 105792947502-compute@developer.gserviceaccount.com
+    artifactStorage: gs://us-central1.deploy-artifacts.riccardo-blog-test-v1.appspot.com
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Target
+metadata:
+  name: agent-engine-staging
+  labels:
+    env: staging
+    runtime: agent-engine
+    app: conductor-v2
+description: Staging Pre-Production Environment (Vertex AI Agent Engine - us-central1)
+customTarget:
+  customTargetType: projects/riccardo-blog-test-v1/locations/us-central1/customTargetTypes/vertex-ai-agent-engine
+executionConfigs:
+  - usages:
+      - RENDER
+      - DEPLOY
+      - VERIFY
+      - PREDEPLOY
+      - POSTDEPLOY
+    serviceAccount: 105792947502-compute@developer.gserviceaccount.com
+    artifactStorage: gs://us-central1.deploy-artifacts.riccardo-blog-test-v1.appspot.com
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Target
+metadata:
+  name: agent-engine-prod
+  labels:
+    env: prod
+    runtime: agent-engine
+    app: conductor-v2
+description: Production Environment (Vertex AI Agent Engine - us-central1) - Autonomous Auto-Approval
+requireApproval: false
+customTarget:
+  customTargetType: projects/riccardo-blog-test-v1/locations/us-central1/customTargetTypes/vertex-ai-agent-engine
+executionConfigs:
+  - usages:
+      - RENDER
+      - DEPLOY
+      - VERIFY
+      - PREDEPLOY
+      - POSTDEPLOY
+    serviceAccount: 105792947502-compute@developer.gserviceaccount.com
+    artifactStorage: gs://us-central1.deploy-artifacts.riccardo-blog-test-v1.appspot.com
