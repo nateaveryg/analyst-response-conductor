@@ -26,10 +26,13 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from scripts.evaluate_production_agent import (
     DEFAULT_AGENT_ENGINE_ID,
+    build_evaluation_run_payload,
     compute_groundedness_score,
     compute_hallucination_rate,
     compute_tool_call_accuracy,
+    extract_reasoning_engine_id,
     normalize_text,
+    publish_evaluation_run,
     query_agent_engine,
     run_evaluation,
 )
@@ -1105,3 +1108,537 @@ class TestRepositoryIsolationAndGovernance:
                     for w in ["and", "problem", "statement", "trade-offs", "topology"]:
                         if w in heading_text.lower():
                             assert w in heading_text, f"Heading '{heading_text}' violates sentence-style capitalization"
+
+
+# =====================================================================
+# 6. Vertex AI Agent Engine EvaluationRun Publisher & Binding Tests
+# =====================================================================
+class TestAgentEngineEvaluationRunPublisher:
+    """Validates EvaluationRun payload schema, Reasoning Engine binding, and dual logging."""
+
+    def test_extract_reasoning_engine_id(self):
+        """Verifies extraction of numeric/short engine ID from canonical resource URI."""
+        canonical_uri = (
+            "projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/1423301859237429248"
+        )
+        assert extract_reasoning_engine_id(canonical_uri) == "1423301859237429248"
+        assert extract_reasoning_engine_id("1423301859237429248") == "1423301859237429248"
+        assert extract_reasoning_engine_id("") == ""
+        assert extract_reasoning_engine_id(None) == ""
+        assert extract_reasoning_engine_id("  1423301859237429248  ") == "1423301859237429248"
+        assert extract_reasoning_engine_id(1423301859237429248) == "1423301859237429248"
+        assert extract_reasoning_engine_id("engine-id/") == "engine-id"
+
+    def test_build_evaluation_run_payload_canonical_binding(self):
+        """Requirement R2: Verifies EvaluationRun binds to canonical Reasoning Engine and sets console labels."""
+        payload = build_evaluation_run_payload(
+            agent_engine_id=DEFAULT_AGENT_ENGINE_ID,
+            run_id="run-test-123",
+            canary_phase="canary-25",
+            metrics={"average_groundedness": 0.88, "average_hallucination_rate": 0.03, "average_tool_call_accuracy": 0.94},
+            total_items=12,
+            passed_items=12,
+            quality_gate_passed=True,
+            location="us-central1",
+        )
+
+        assert payload["agent_engine"] == DEFAULT_AGENT_ENGINE_ID
+        assert payload["inference_configs"]["conductor-agent"]["agent_run_config"]["agent_engine"] == DEFAULT_AGENT_ENGINE_ID
+        assert payload["inferenceConfigs"]["conductor-agent"]["agentRunConfig"]["agent_engine"] == DEFAULT_AGENT_ENGINE_ID
+        assert payload["labels"]["vertex-ai-evaluation-agent-engine-id"] == "1423301859237429248"
+        assert payload["labels"]["vertex-ai-evaluation-agent-engine-location"] == "us-central1"
+        assert payload["labels"]["canary_phase"] == "canary-25"
+        assert payload["labels"]["quality_gate_passed"] == "true"
+        assert payload["state"] == "SUCCEEDED"
+
+    def test_build_evaluation_run_payload_short_numeric_id_normalization(self):
+        """Requirement R2: Verifies bare numeric ID is normalized to full canonical resource URI."""
+        payload = build_evaluation_run_payload(
+            agent_engine_id="1423301859237429248",
+            project_id="riccardo-blog-test-v1",
+            location="us-central1",
+        )
+        expected_canonical = "projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/1423301859237429248"
+        assert payload["agent_engine"] == expected_canonical
+        assert payload["inference_configs"]["conductor-agent"]["agent_run_config"]["agent_engine"] == expected_canonical
+        assert payload["labels"]["vertex-ai-evaluation-agent-engine-id"] == "1423301859237429248"
+        assert payload["labels"]["vertex-ai-evaluation-agent-engine-location"] == "us-central1"
+
+    def test_build_evaluation_run_payload_evaluation_experiment_binding(self):
+        """Requirement R3: Verifies evaluation_experiment is formatted to canonical resource path."""
+        payload = build_evaluation_run_payload(
+            evaluation_experiment_name="conductor-v3-prod-canary-eval",
+            project_id="riccardo-blog-test-v1",
+            location="us-central1",
+        )
+        expected_exp = (
+            "projects/riccardo-blog-test-v1/locations/us-central1/evaluationExperiments/conductor-v3-prod-canary-eval"
+        )
+        assert payload["evaluation_experiment"] == expected_exp
+        assert payload["evaluationExperiment"] == expected_exp
+
+    def test_build_evaluation_run_payload_metric_fields_mapping(self):
+        """Requirement R2: Verifies groundedness, hallucination rate, and tool accuracy map cleanly."""
+        metrics_input = {
+            "average_groundedness": 0.8542,
+            "average_hallucination_rate": 0.0125,
+            "average_tool_call_accuracy": 0.9583,
+        }
+        payload = build_evaluation_run_payload(
+            agent_engine_id=DEFAULT_AGENT_ENGINE_ID,
+            run_id="metric-map-test",
+            metrics=metrics_input,
+            total_items=12,
+            passed_items=12,
+            quality_gate_passed=True,
+        )
+
+        # Verify evaluation_config metrics declarations
+        config_metrics = payload["evaluation_config"]["metrics"]
+        metric_names = {m["metric"] for m in config_metrics}
+        assert {"groundedness", "hallucination_rate", "tool_call_accuracy"}.issubset(metric_names)
+
+        # Verify summary_metrics values
+        summary_metrics = payload["evaluation_results"]["summary_metrics"]["metrics"]
+        assert summary_metrics["groundedness"] == 0.8542
+        assert summary_metrics["hallucination_rate"] == 0.0125
+        assert summary_metrics["tool_call_accuracy"] == 0.9583
+        assert summary_metrics["quality_gate_passed"] == 1.0
+
+        assert payload["evaluation_results"]["summary_metrics"]["total_items"] == 12
+        assert payload["evaluation_results"]["summary_metrics"]["failed_items"] == 0
+
+    def test_build_evaluation_run_payload_failure_state_mapping(self):
+        """Verifies state is FAILED and failed_items reflects failures when quality gate is breached."""
+        payload = build_evaluation_run_payload(
+            agent_engine_id=DEFAULT_AGENT_ENGINE_ID,
+            metrics={"average_groundedness": 0.50},
+            total_items=12,
+            passed_items=9,
+            quality_gate_passed=False,
+        )
+        assert payload["state"] == "FAILED"
+        assert payload["labels"]["quality_gate_passed"] == "false"
+        assert payload["evaluation_results"]["summary_metrics"]["failed_items"] == 3
+        assert payload["evaluation_results"]["summary_metrics"]["metrics"]["quality_gate_passed"] == 0.0
+
+    def test_publish_evaluation_run_mock_mode(self):
+        """Requirement R3: Verifies mock mode returns success without outbound network calls."""
+        payload = build_evaluation_run_payload(
+            agent_engine_id=DEFAULT_AGENT_ENGINE_ID,
+            run_id="mock-test-01",
+        )
+        success, response = publish_evaluation_run(
+            project_id="riccardo-blog-test-v1",
+            location="us-central1",
+            payload=payload,
+            mock_mode=True,
+        )
+        assert success is True
+        assert isinstance(response, dict)
+        assert "evaluationRuns" in response["name"]
+        assert "projects/riccardo-blog-test-v1/locations/us-central1/evaluationRuns/" in response["name"]
+
+    def test_publish_evaluation_run_live_mode_mocked_http_success(self):
+        """Requirement R2 & R3: Validates v1beta1 API call formatting and successful registration."""
+        from unittest.mock import MagicMock, patch
+
+        payload = build_evaluation_run_payload(
+            agent_engine_id=DEFAULT_AGENT_ENGINE_ID,
+            run_id="live-test-01",
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 201
+        mock_resp.json.return_value = {
+            "name": "projects/riccardo-blog-test-v1/locations/us-central1/evaluationRuns/live-test-01",
+            "state": "SUCCEEDED",
+        }
+
+        mock_session = MagicMock()
+        mock_session.post.return_value = mock_resp
+
+        with patch("google.auth.default", return_value=(MagicMock(), "riccardo-blog-test-v1")):
+            with patch("google.auth.transport.requests.AuthorizedSession", return_value=mock_session):
+                success, response = publish_evaluation_run(
+                    project_id="riccardo-blog-test-v1",
+                    location="us-central1",
+                    payload=payload,
+                    mock_mode=False,
+                )
+
+        assert success is True
+        assert response["name"] == "projects/riccardo-blog-test-v1/locations/us-central1/evaluationRuns/live-test-01"
+        assert mock_session.post.call_count == 1
+        call_args, call_kwargs = mock_session.post.call_args
+        expected_url = (
+            "https://us-central1-aiplatform.googleapis.com/v1beta1/"
+            "projects/riccardo-blog-test-v1/locations/us-central1/evaluationRuns"
+        )
+        assert call_args[0] == expected_url
+        assert call_kwargs["json"] == payload
+
+    def test_publish_evaluation_run_handles_empty_or_non_json_response(self):
+        """Requirement R3: Verifies HTTP 201 with empty or non-JSON body still registers successfully."""
+        from unittest.mock import MagicMock, patch
+
+        payload = build_evaluation_run_payload(
+            agent_engine_id=DEFAULT_AGENT_ENGINE_ID,
+            run_id="empty-json-test",
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 201
+        mock_resp.json.side_effect = ValueError("No JSON object could be decoded")
+        mock_session = MagicMock()
+        mock_session.post.return_value = mock_resp
+
+        with patch("google.auth.default", return_value=(MagicMock(), "riccardo-blog-test-v1")):
+            with patch("google.auth.transport.requests.AuthorizedSession", return_value=mock_session):
+                success, response = publish_evaluation_run(
+                    project_id="riccardo-blog-test-v1",
+                    location="us-central1",
+                    payload=payload,
+                    mock_mode=False,
+                )
+
+        assert success is True
+        assert isinstance(response, dict)
+        assert "empty-json-test" in response["name"]
+
+    def test_publish_evaluation_run_resilient_fallback_on_error(self):
+        """Requirement R3: Verifies resilient fallback when API call fails or encounters network error."""
+        from unittest.mock import MagicMock, patch
+
+        payload = build_evaluation_run_payload(
+            agent_engine_id=DEFAULT_AGENT_ENGINE_ID,
+            run_id="error-fallback-test",
+        )
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 503
+        mock_resp.text = "Service Unavailable"
+        mock_session = MagicMock()
+        mock_session.post.return_value = mock_resp
+
+        with patch("google.auth.default", return_value=(MagicMock(), "riccardo-blog-test-v1")):
+            with patch("google.auth.transport.requests.AuthorizedSession", return_value=mock_session):
+                success, response = publish_evaluation_run(
+                    project_id="riccardo-blog-test-v1",
+                    location="us-central1",
+                    payload=payload,
+                    mock_mode=False,
+                )
+
+        assert success is False
+        assert response is None
+
+        # Network exception fallback
+        mock_session.post.side_effect = RuntimeError("Network partition in private pool")
+        with patch("google.auth.default", return_value=(MagicMock(), "riccardo-blog-test-v1")):
+            with patch("google.auth.transport.requests.AuthorizedSession", return_value=mock_session):
+                success_exc, response_exc = publish_evaluation_run(
+                    project_id="riccardo-blog-test-v1",
+                    location="us-central1",
+                    payload=payload,
+                    mock_mode=False,
+                )
+
+        assert success_exc is False
+        assert response_exc is None
+
+    def test_run_evaluation_dual_logging_metadata(self, tmp_path):
+        """Requirement R3: Verifies run_evaluation logs to both Experiments and Evaluation Runs."""
+        output_file = tmp_path / "scorecard_dual_logging.json"
+        passed, scorecard = run_evaluation(
+            dataset_path=str(DATASET_PATH),
+            output_path=str(output_file),
+            mock_mode=True,
+            canary_phase="canary-25",
+        )
+
+        assert passed is True
+        assert scorecard["metadata"]["vertex_experiments_logged"] is True
+        assert scorecard["metadata"]["vertex_evaluation_run_logged"] is True
+        assert "evaluation_run_resource_name" in scorecard["metadata"]
+        assert "evaluation_run" in scorecard
+        assert scorecard["evaluation_run"]["labels"]["vertex-ai-evaluation-agent-engine-id"] == "1423301859237429248"
+        assert scorecard["evaluation_run"]["labels"]["vertex-ai-evaluation-agent-engine-location"] == "us-central1"
+        assert "evaluation_experiment" in scorecard["evaluation_run"]
+        assert "conductor-v3-prod-canary-eval" in scorecard["evaluation_run"]["evaluation_experiment"]
+
+        # Check persisted scorecard on disk
+        with open(output_file, "r", encoding="utf-8") as f:
+            disk_data = json.load(f)
+        assert disk_data["metadata"]["vertex_experiments_logged"] is True
+        assert disk_data["metadata"]["vertex_evaluation_run_logged"] is True
+        assert disk_data["evaluation_run"]["agent_engine"] == DEFAULT_AGENT_ENGINE_ID
+        assert disk_data["evaluation_run"]["labels"]["vertex-ai-evaluation-agent-engine-location"] == "us-central1"
+
+    def test_run_evaluation_publish_disabled(self, tmp_path):
+        """Requirement R3: Verifies run_evaluation behaves cleanly when publishing is disabled."""
+        output_file = tmp_path / "scorecard_pub_disabled.json"
+        passed, scorecard = run_evaluation(
+            dataset_path=str(DATASET_PATH),
+            output_path=str(output_file),
+            mock_mode=True,
+            publish_evaluation_run_enabled=False,
+        )
+
+        assert passed is True
+        assert scorecard["metadata"]["vertex_experiments_logged"] is True
+        assert scorecard["metadata"]["vertex_evaluation_run_logged"] is False
+        assert scorecard["metadata"]["evaluation_run_resource_name"] is None
+        assert "evaluation_run" in scorecard
+
+    def test_adr_contains_evaluation_run_addendum_and_binding_spec(self):
+        """Requirement R1: Verifies ADR-08 contains addendum documenting EvaluationRun vs MetadataStore."""
+        assert ADR_PATH.exists()
+        content = ADR_PATH.read_text(encoding="utf-8")
+
+        assert "## 9. Addendum: Vertex AI Agent Engine evaluation run specification" in content
+        assert "aiplatform.MetadataStore" in content
+        assert "aiplatform.v1beta1.EvaluationService.EvaluationRun" in content
+        assert "vertex-ai-evaluation-agent-engine-id" in content
+        assert "vertex-ai-evaluation-agent-engine-location" in content
+        assert "1423301859237429248" in content
+        assert "inference_configs" in content
+        assert "agent_run_config.agent_engine" in content
+        assert "evaluationExperiments" in content
+
+    def test_extract_reasoning_engine_id_edge_cases(self):
+        """Requirement R2: Tests edge cases for extract_reasoning_engine_id (0, None, trailing slashes, whitespace)."""
+        assert extract_reasoning_engine_id(0) == "0"
+        assert extract_reasoning_engine_id(1423301859237429248) == "1423301859237429248"
+        assert extract_reasoning_engine_id(None) == ""
+        assert extract_reasoning_engine_id("") == ""
+        assert extract_reasoning_engine_id("   ") == ""
+        assert extract_reasoning_engine_id("projects/p/locations/l/reasoningEngines/123/") == "123"
+
+    def test_build_evaluation_run_payload_partial_path_normalization(self):
+        """Requirement R2: Verifies partial paths normalize without duplicated prefixes and supports camelCase."""
+        # 1. Partial path starting with reasoningEngines/
+        payload_re = build_evaluation_run_payload(
+            agent_engine_id="reasoningEngines/1423301859237429248",
+            project_id="riccardo-blog-test-v1",
+            location="us-central1",
+        )
+        expected_canonical = "projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/1423301859237429248"
+        assert payload_re["agent_engine"] == expected_canonical
+        assert payload_re["agentEngine"] == expected_canonical
+        assert payload_re["inference_configs"]["conductor-agent"]["agent_run_config"]["agentEngine"] == expected_canonical
+
+        # 2. Partial path starting with locations/
+        payload_loc = build_evaluation_run_payload(
+            agent_engine_id="locations/us-central1/reasoningEngines/1423301859237429248",
+            project_id="riccardo-blog-test-v1",
+            location="us-central1",
+        )
+        assert payload_loc["agent_engine"] == expected_canonical
+        assert payload_loc["agentEngine"] == expected_canonical
+
+        # 3. Experiment with partial prefix
+        payload_exp = build_evaluation_run_payload(
+            evaluation_experiment_name="evaluationExperiments/conductor-v3-prod-canary-eval",
+            project_id="riccardo-blog-test-v1",
+            location="us-central1",
+        )
+        expected_exp = "projects/riccardo-blog-test-v1/locations/us-central1/evaluationExperiments/conductor-v3-prod-canary-eval"
+        assert payload_exp["evaluation_experiment"] == expected_exp
+        assert payload_exp["evaluationExperiment"] == expected_exp
+
+    def test_publish_evaluation_run_endpoint_normalization(self):
+        """Requirement R2 & R3: Verifies endpoint URLs normalize trailing slashes and missing schemes."""
+        from unittest.mock import MagicMock, patch
+
+        payload = build_evaluation_run_payload()
+        mock_session = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"name": "test-endpoint-norm"}
+        mock_session.post.return_value = mock_resp
+
+        expected_url = "https://us-central1-aiplatform.googleapis.com/v1beta1/projects/riccardo-blog-test-v1/locations/us-central1/evaluationRuns"
+
+        with patch("google.auth.default", return_value=(MagicMock(), "riccardo-blog-test-v1")):
+            with patch("google.auth.transport.requests.AuthorizedSession", return_value=mock_session):
+                # Trailing slash test
+                success1, _ = publish_evaluation_run(
+                    project_id="riccardo-blog-test-v1",
+                    location="us-central1",
+                    payload=payload,
+                    mock_mode=False,
+                    api_endpoint="https://us-central1-aiplatform.googleapis.com/",
+                )
+                assert success1 is True
+                assert mock_session.post.call_args[0][0] == expected_url
+
+                # Missing scheme test
+                success2, _ = publish_evaluation_run(
+                    project_id="riccardo-blog-test-v1",
+                    location="us-central1",
+                    payload=payload,
+                    mock_mode=False,
+                    api_endpoint="us-central1-aiplatform.googleapis.com",
+                )
+                assert success2 is True
+                assert mock_session.post.call_args[0][0] == expected_url
+
+    def test_cli_execution_boolean_env_vars_edge_cases(self, tmp_path):
+        """Requirement R3: Verifies empty or whitespace boolean environment variables default safely."""
+        out_file = tmp_path / "scorecard_env_test.json"
+        script_path = PROJECT_ROOT / "scripts" / "evaluate_production_agent.py"
+
+        # 1. Empty string for PUBLISH_EVALUATION_RUN should preserve default (True)
+        env_empty = dict(os.environ, PUBLISH_EVALUATION_RUN="", MOCK_AGENT="")
+        res1 = subprocess.run(
+            [sys.executable, str(script_path), "--mock", "--output", str(out_file)],
+            env=env_empty,
+            capture_output=True,
+            text=True,
+        )
+        assert res1.returncode == 0
+        with open(out_file, "r", encoding="utf-8") as f:
+            data1 = json.load(f)
+        assert data1["metadata"]["vertex_evaluation_run_logged"] is True
+
+        # 2. Explicit false value disables publishing
+        env_false = dict(os.environ, PUBLISH_EVALUATION_RUN="false")
+        res2 = subprocess.run(
+            [sys.executable, str(script_path), "--mock", "--output", str(out_file)],
+            env=env_false,
+            capture_output=True,
+            text=True,
+        )
+        assert res2.returncode == 0
+        with open(out_file, "r", encoding="utf-8") as f:
+            data2 = json.load(f)
+        assert data2["metadata"]["vertex_evaluation_run_logged"] is False
+
+    def test_publish_evaluation_run_version_suffix_trimming_and_http_202(self):
+        """Requirement R2 & R3: Verifies endpoint ending in /v1beta1 or /v1 does not duplicate path and handles HTTP 202."""
+        from unittest.mock import MagicMock, patch
+
+        payload = build_evaluation_run_payload()
+        mock_session = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 202  # Accepted
+        mock_resp.json.return_value = {"name": "test-accepted"}
+        mock_session.post.return_value = mock_resp
+
+        expected_url = (
+            "https://us-central1-aiplatform.googleapis.com/v1beta1/"
+            "projects/riccardo-blog-test-v1/locations/us-central1/evaluationRuns"
+        )
+
+        with patch("google.auth.default", return_value=(MagicMock(), "riccardo-blog-test-v1")):
+            with patch("google.auth.transport.requests.AuthorizedSession", return_value=mock_session):
+                # /v1beta1 suffix should not produce /v1beta1/v1beta1
+                ok1, r1 = publish_evaluation_run(
+                    project_id="riccardo-blog-test-v1",
+                    location="us-central1",
+                    payload=payload,
+                    mock_mode=False,
+                    api_endpoint="https://us-central1-aiplatform.googleapis.com/v1beta1",
+                )
+                assert ok1 is True
+                assert r1["name"] == "test-accepted"
+                assert mock_session.post.call_args[0][0] == expected_url
+
+                # /v1 suffix should also be normalized
+                ok2, _ = publish_evaluation_run(
+                    project_id="riccardo-blog-test-v1",
+                    location="us-central1",
+                    payload=payload,
+                    mock_mode=False,
+                    api_endpoint="https://us-central1-aiplatform.googleapis.com/v1",
+                )
+                assert ok2 is True
+                assert mock_session.post.call_args[0][0] == expected_url
+
+    def test_publish_evaluation_run_whitespace_endpoint_and_none_payload(self):
+        """Requirement R3: Verifies whitespace endpoint falls back safely and None payload does not crash."""
+        from unittest.mock import MagicMock, patch
+
+        # 1. None payload in mock mode
+        ok_none, resp_none = publish_evaluation_run("proj", "loc", None, mock_mode=True)
+        assert ok_none is True
+        assert "evaluation-run" in resp_none["name"]
+
+        # 2. Whitespace endpoint falls back to default region endpoint
+        mock_session = MagicMock()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"name": "test-whitespace-fallback"}
+        mock_session.post.return_value = mock_resp
+
+        expected_fallback_url = (
+            "https://us-central1-aiplatform.googleapis.com/v1beta1/"
+            "projects/riccardo-blog-test-v1/locations/us-central1/evaluationRuns"
+        )
+
+        with patch("google.auth.default", return_value=(MagicMock(), "riccardo-blog-test-v1")):
+            with patch("google.auth.transport.requests.AuthorizedSession", return_value=mock_session):
+                ok_ws, _ = publish_evaluation_run(
+                    project_id="riccardo-blog-test-v1",
+                    location="us-central1",
+                    payload={},
+                    mock_mode=False,
+                    api_endpoint="    ",
+                )
+                assert ok_ws is True
+                assert mock_session.post.call_args[0][0] == expected_fallback_url
+
+    def test_build_evaluation_run_payload_extended_edge_cases(self):
+        """Requirement R2: Verifies whitespace experiment omission, engine trailing slash, and dual casing."""
+        # 1. Whitespace experiment name is omitted rather than populated as empty string
+        p_exp = build_evaluation_run_payload(evaluation_experiment_name="   ")
+        assert "evaluation_experiment" not in p_exp
+        assert "evaluationExperiment" not in p_exp
+
+        # 2. Trailing slash on full engine resource path is trimmed
+        p_slash = build_evaluation_run_payload(
+            agent_engine_id="projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/1423301859237429248/"
+        )
+        canonical = "projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/1423301859237429248"
+        assert p_slash["agent_engine"] == canonical
+        assert p_slash["agentEngine"] == canonical
+
+        # 3. Dual casing in dataSource and summaryMetrics
+        assert p_slash["dataSource"]["evaluation_set"] == p_slash["dataSource"]["evaluationSet"]
+        summary = p_slash["evaluationResults"]["summaryMetrics"]
+        assert summary["total_items"] == summary["totalItems"] == 12
+        assert summary["failed_items"] == summary["failedItems"] == 0
+
+        # 4. Over-passed items protects against negative failed_items
+        p_over = build_evaluation_run_payload(total_items=5, passed_items=10)
+        assert p_over["evaluationResults"]["summaryMetrics"]["failed_items"] == 0
+
+    def test_cli_execution_api_endpoint_flag_and_scorecard_name_sync(self, tmp_path):
+        """Requirement R2 & R3: Verifies --api-endpoint CLI flag and evaluation_run name field syncing."""
+        out_file = tmp_path / "scorecard_cli_endpoint.json"
+        script_path = PROJECT_ROOT / "scripts" / "evaluate_production_agent.py"
+
+        res = subprocess.run(
+            [
+                sys.executable,
+                str(script_path),
+                "--mock",
+                "--output",
+                str(out_file),
+                "--api-endpoint",
+                "https://custom-endpoint.googleapis.com",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert res.returncode == 0
+        with open(out_file, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        assert data["metadata"]["vertex_evaluation_run_logged"] is True
+        res_name = data["metadata"]["evaluation_run_resource_name"]
+        assert res_name is not None
+        assert data["evaluation_run"]["name"] == res_name
+
+

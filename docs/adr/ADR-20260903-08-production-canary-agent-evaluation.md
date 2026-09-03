@@ -164,6 +164,7 @@ graph TD
 
     subgraph EXP["Observability and Governance"]
         VERTEX_EXP["Vertex AI Experiments<br/>(conductor-v3-prod-canary-eval)"]
+        EVAL_RUN["Vertex AI Evaluation Runs<br/>(aiplatform.v1beta1.EvaluationRun)"]
         SCORECARD["Evaluation Scorecard<br/>(scorecard.json)"]
         GATE["Rollback Gate Decision<br/>(Exit Code 0 vs 1)"]
     end
@@ -182,6 +183,7 @@ graph TD
 
     SCORER --> SCORECARD
     SCORER --> VERTEX_EXP
+    SCORER --> EVAL_RUN
     SCORER --> GATE
 
     GATE -->|Pass: Exit 0| AUTO
@@ -204,3 +206,70 @@ graph TD
 ### Negative
 * Requires maintaining the golden evaluation dataset alongside backend API and schema evolution.
 * Requires provisioning IAM permissions for `aiplatform.user` on the Cloud Deploy execution service account.
+
+---
+
+## 9. Addendum: Vertex AI Agent Engine evaluation run specification
+
+### Architectural resource distinction
+We maintain dual observability streams for canary evaluation. This architecture establishes distinct roles for experiment tracking and agent control-plane resources:
+
+* **Vertex AI Experiments (`aiplatform.MetadataStore`)**:
+  * **Purpose**: Tracks longitudinal metrics, statistical drift, and multi-commit trends across deployment iterations.
+  * **Storage model**: Persisted as run executions within the metadata store (`conductor-v3-prod-canary-eval`).
+  * **Access pattern**: Optimized for time-series aggregation, tabular comparisons, and rollback audit queries.
+  * **Limitation**: Does not bind directly to Reasoning Engine resources in the Google Cloud Console.
+
+* **Vertex AI Agent Engine Evaluation Runs (`aiplatform.v1beta1.EvaluationService.EvaluationRun`)**:
+  * **Purpose**: Provides top-level control-plane evaluation resources linked directly to Reasoning Engines.
+  * **Storage model**: Managed entities addressed at `projects/{project}/locations/{location}/evaluationRuns/{evaluation_run_id}`.
+  * **Access pattern**: Discovered and rendered in the Vertex AI Agent Engine Console under the Evaluation tab.
+  * **Binding mechanism**: Directly binds to the Reasoning Engine instance to display evaluation scorecards.
+
+### Reasoning Engine binding mechanism
+Evaluation runs bind to the target Reasoning Engine through three complementary mechanisms:
+
+1. **Inference configuration linkage**:
+   * Evaluator payloads set `inference_configs.<candidate>.agent_run_config.agent_engine` to the canonical resource name:
+     `projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/1423301859237429248`.
+   * Evaluators provide dual Proto3 camelCase (`agentEngine`) and snake_case (`agent_engine`) fields for runtime interoperability.
+   * Evaluators accept full resource names, partial paths, or numeric identifiers. They normalize identifiers automatically.
+
+2. **Console discovery indexing**:
+   * The Cloud Console Evaluation tab indexes evaluation runs using two required resource labels:
+     `vertex-ai-evaluation-agent-engine-id: "1423301859237429248"` and
+     `vertex-ai-evaluation-agent-engine-location: "us-central1"`.
+   * Evaluator payloads attach both labels automatically during registration to ensure reliable discovery.
+
+3. **Experiment tracking linkage**:
+   * Evaluator payloads populate `evaluation_experiment` with the canonical resource path:
+     `projects/{project}/locations/{location}/evaluationExperiments/{experiment}`.
+   * This binds the evaluation run to the active Vertex AI Experiment for dual tracking.
+
+### Metric field mapping
+Evaluation metrics computed during canary verify phases map directly into `EvaluationRun` schemas:
+
+* `groundedness` maps to `evaluation_config.metrics` and `evaluation_results.summary_metrics.metrics.groundedness`.
+* `hallucination_rate` maps to `evaluation_config.metrics` and `evaluation_results.summary_metrics.metrics.hallucination_rate`.
+* `tool_call_accuracy` maps to `evaluation_config.metrics` and `evaluation_results.summary_metrics.metrics.tool_call_accuracy`.
+* Overall pass status maps to `state: SUCCEEDED` (or `FAILED`) and `labels.quality_gate_passed`.
+* Evaluators provide symmetric camelCase and snake_case properties for `dataSource` and `summaryMetrics`.
+
+### Resilient dual logging and fallback strategy
+The evaluation runner coordinates dual logging across both Vertex AI observability destinations:
+
+1. **Sequential registration**:
+   * The runner logs metrics and parameters to Vertex AI Experiments first.
+   * It constructs the `EvaluationRun` payload and calls the `v1beta1` API second.
+   * It propagates the generated evaluation run resource name into scorecard metadata.
+
+2. **Isolated failure domains**:
+   * Network partitions or IAM limitations impacting `EvaluationRun` publishing generate structured warnings without aborting canary gates.
+   * Local JSON scorecard generation and threshold enforcement remain authoritative.
+   * Mock evaluation mode simulates `EvaluationRun` resource creation without making network calls.
+
+3. **Transport and endpoint normalization**:
+   * Evaluators accept `--api-endpoint` overrides and strip trailing slashes automatically.
+   * Evaluators strip redundant `/v1beta1` or `/v1` version suffixes to avoid duplicate path segments.
+   * Empty or whitespace environment variables cleanly fall back to secure default states.
+   * Registrations accept standard HTTP 2xx success status responses including 200, 201, and 202.

@@ -608,6 +608,285 @@ def log_experiment_metrics(
         return False
 
 
+def extract_reasoning_engine_id(agent_engine_path: Any) -> str:
+    """Extract numeric or short identifier from full Reasoning Engine resource path."""
+    if agent_engine_path is None:
+        return ""
+    str_path = str(agent_engine_path).strip()
+    if not str_path:
+        return ""
+    parts = str_path.rstrip("/").split("/")
+    return parts[-1] if parts else str_path
+
+
+def build_evaluation_run_payload(
+    agent_engine_id: str = DEFAULT_AGENT_ENGINE_ID,
+    run_id: Optional[str] = None,
+    canary_phase: str = "canary-25",
+    metrics: Optional[Dict[str, float]] = None,
+    total_items: int = 12,
+    passed_items: int = 12,
+    quality_gate_passed: bool = True,
+    dataset_version: str = "1.0",
+    dataset_path: str = "data/golden_eval_dataset.json",
+    evaluation_experiment_name: Optional[str] = None,
+    candidate_name: str = "conductor-agent",
+    project_id: str = DEFAULT_PROJECT_ID,
+    location: str = DEFAULT_LOCATION,
+) -> Dict[str, Any]:
+    """Construct a valid Vertex AI Agent Platform EvaluationRun payload.
+
+    Binds the EvaluationRun to the specified Reasoning Engine via agent_run_config
+    and includes indexing labels required for the Agent Engine Console UI.
+    """
+    if metrics is None:
+        metrics = {}
+    if not run_id:
+        timestamp_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d-%H%M%S")
+        run_id = f"eval-{canary_phase}-{timestamp_str}"
+
+    clean_project = str(project_id).strip().strip("/") if project_id else DEFAULT_PROJECT_ID
+    clean_location = str(location).strip().strip("/") if location else DEFAULT_LOCATION
+
+    # Normalize agent_engine_id to canonical resource path if a short, numeric, or partial path is passed
+    str_engine_id = str(agent_engine_id).strip().rstrip("/") if agent_engine_id is not None else DEFAULT_AGENT_ENGINE_ID
+    if not str_engine_id:
+        str_engine_id = DEFAULT_AGENT_ENGINE_ID
+
+    if str_engine_id and not str_engine_id.startswith("projects/"):
+        if str_engine_id.startswith("locations/"):
+            canonical_agent_engine = f"projects/{clean_project}/{str_engine_id}"
+        elif str_engine_id.startswith("reasoningEngines/"):
+            canonical_agent_engine = f"projects/{clean_project}/locations/{clean_location}/{str_engine_id}"
+        else:
+            canonical_agent_engine = f"projects/{clean_project}/locations/{clean_location}/reasoningEngines/{str_engine_id}"
+    else:
+        canonical_agent_engine = str_engine_id or DEFAULT_AGENT_ENGINE_ID
+
+    engine_id_num = extract_reasoning_engine_id(canonical_agent_engine)
+    state = "SUCCEEDED" if quality_gate_passed else "FAILED"
+    display_name = f"conductor-v3-{canary_phase}-{run_id}"
+
+    eval_metrics = [
+        {
+            "metric": "groundedness",
+            "metric_config": {
+                "predefined_metric_spec": {
+                    "metric_spec_name": "groundedness",
+                }
+            },
+        },
+        {
+            "metric": "hallucination_rate",
+            "metric_config": {
+                "predefined_metric_spec": {
+                    "metric_spec_name": "hallucination_rate",
+                }
+            },
+        },
+        {
+            "metric": "tool_call_accuracy",
+            "metric_config": {
+                "predefined_metric_spec": {
+                    "metric_spec_name": "tool_call_accuracy",
+                }
+            },
+        },
+    ]
+
+    summary_metrics_dict = {
+        "groundedness": float(metrics.get("average_groundedness", metrics.get("groundedness", 0.0))),
+        "hallucination_rate": float(metrics.get("average_hallucination_rate", metrics.get("hallucination_rate", 0.0))),
+        "tool_call_accuracy": float(metrics.get("average_tool_call_accuracy", metrics.get("tool_call_accuracy", 0.0))),
+        "quality_gate_passed": 1.0 if quality_gate_passed else 0.0,
+    }
+
+    eval_set_path = f"projects/{clean_project}/locations/{clean_location}/evaluationSets/conductor-v3-golden-dataset"
+    failed_items_count = max(0, total_items - passed_items)
+
+    payload: Dict[str, Any] = {
+        "display_name": display_name,
+        "displayName": display_name,
+        "agent_engine": canonical_agent_engine,
+        "agentEngine": canonical_agent_engine,
+        "labels": {
+            "vertex-ai-evaluation-agent-engine-id": engine_id_num,
+            "vertex-ai-evaluation-agent-engine-location": clean_location,
+            "canary_phase": canary_phase,
+            "quality_gate_passed": "true" if quality_gate_passed else "false",
+            "pipeline": "conductor-v3",
+        },
+        "data_source": {
+            "evaluation_set": eval_set_path,
+            "evaluationSet": eval_set_path,
+        },
+        "dataSource": {
+            "evaluation_set": eval_set_path,
+            "evaluationSet": eval_set_path,
+        },
+        "inference_configs": {
+            candidate_name: {
+                "agent_run_config": {
+                    "agent_engine": canonical_agent_engine,
+                    "agentEngine": canonical_agent_engine,
+                },
+                "agentRunConfig": {
+                    "agent_engine": canonical_agent_engine,
+                    "agentEngine": canonical_agent_engine,
+                },
+            }
+        },
+        "inferenceConfigs": {
+            candidate_name: {
+                "agent_run_config": {
+                    "agent_engine": canonical_agent_engine,
+                    "agentEngine": canonical_agent_engine,
+                },
+                "agentRunConfig": {
+                    "agent_engine": canonical_agent_engine,
+                    "agentEngine": canonical_agent_engine,
+                },
+            }
+        },
+        "evaluation_config": {
+            "metrics": eval_metrics,
+        },
+        "evaluationConfig": {
+            "metrics": eval_metrics,
+        },
+        "evaluation_results": {
+            "summary_metrics": {
+                "metrics": summary_metrics_dict,
+                "total_items": total_items,
+                "failed_items": failed_items_count,
+                "totalItems": total_items,
+                "failedItems": failed_items_count,
+            }
+        },
+        "evaluationResults": {
+            "summaryMetrics": {
+                "metrics": summary_metrics_dict,
+                "total_items": total_items,
+                "failed_items": failed_items_count,
+                "totalItems": total_items,
+                "failedItems": failed_items_count,
+            }
+        },
+        "state": state,
+        "metadata": {
+            "agent_engine_id": canonical_agent_engine,
+            "canary_phase": canary_phase,
+            "run_id": run_id,
+            "dataset_path": dataset_path,
+            "dataset_version": dataset_version,
+            "quality_gate_passed": str(quality_gate_passed).lower(),
+            "groundedness": str(summary_metrics_dict["groundedness"]),
+            "hallucination_rate": str(summary_metrics_dict["hallucination_rate"]),
+            "tool_call_accuracy": str(summary_metrics_dict["tool_call_accuracy"]),
+        },
+    }
+
+    if evaluation_experiment_name and str(evaluation_experiment_name).strip():
+        str_exp_name = str(evaluation_experiment_name).strip().rstrip("/")
+        if not str_exp_name.startswith("projects/"):
+            if str_exp_name.startswith("locations/"):
+                canonical_exp = f"projects/{clean_project}/{str_exp_name}"
+            elif str_exp_name.startswith("evaluationExperiments/"):
+                canonical_exp = f"projects/{clean_project}/locations/{clean_location}/{str_exp_name}"
+            else:
+                canonical_exp = f"projects/{clean_project}/locations/{clean_location}/evaluationExperiments/{str_exp_name}"
+        else:
+            canonical_exp = str_exp_name
+        payload["evaluation_experiment"] = canonical_exp
+        payload["evaluationExperiment"] = canonical_exp
+
+    return payload
+
+
+def publish_evaluation_run(
+    project_id: str,
+    location: str,
+    payload: Optional[Dict[str, Any]],
+    mock_mode: bool = True,
+    api_endpoint: Optional[str] = None,
+    timeout: float = 30.0,
+) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """Publish an EvaluationRun resource to Vertex AI Agent Platform Evaluation API (v1beta1).
+
+    Supports dual logging alongside Vertex AI Experiments. Provides resilient
+    fallback handling in mock mode and restricted environments.
+    """
+    if not isinstance(payload, dict):
+        payload = {}
+
+    clean_project = str(project_id).strip().strip("/") if project_id else DEFAULT_PROJECT_ID
+    clean_location = str(location).strip().strip("/") if location else DEFAULT_LOCATION
+
+    run_name = payload.get("display_name") or payload.get("displayName") or "evaluation-run"
+    resource_name = f"projects/{clean_project}/locations/{clean_location}/evaluationRuns/{run_name}"
+
+    if mock_mode:
+        logger.info(
+            "Mock mode active: registered Vertex AI EvaluationRun resource '%s'",
+            resource_name,
+        )
+        mock_response = dict(payload)
+        mock_response["name"] = resource_name
+        return True, mock_response
+
+    env_endpoint = os.getenv("VERTEX_EVALUATION_ENDPOINT")
+    raw_endpoint = api_endpoint if (api_endpoint and str(api_endpoint).strip()) else env_endpoint
+    if not raw_endpoint or not str(raw_endpoint).strip():
+        raw_endpoint = f"https://{clean_location}-aiplatform.googleapis.com"
+    endpoint_str = str(raw_endpoint).strip().rstrip("/")
+    if not (endpoint_str.startswith("http://") or endpoint_str.startswith("https://")):
+        endpoint_str = f"https://{endpoint_str}"
+    # Strip any trailing /v1beta1 or /v1 to prevent duplicate API version path segments
+    if endpoint_str.endswith("/v1beta1"):
+        endpoint_str = endpoint_str[:-len("/v1beta1")].rstrip("/")
+    elif endpoint_str.endswith("/v1"):
+        endpoint_str = endpoint_str[:-len("/v1")].rstrip("/")
+
+    url = f"{endpoint_str}/v1beta1/projects/{clean_project}/locations/{clean_location}/evaluationRuns"
+
+    try:
+        import google.auth
+        from google.auth.transport.requests import AuthorizedSession
+
+        credentials, _ = google.auth.default(
+            scopes=["https://www.googleapis.com/auth/cloud-platform"]
+        )
+        session = AuthorizedSession(credentials)
+        logger.info("Publishing EvaluationRun to Vertex AI Agent Platform: %s", url)
+
+        resp = session.post(url, json=payload, timeout=timeout)
+        if 200 <= resp.status_code < 300:
+            try:
+                resp_data = resp.json()
+            except Exception:
+                resp_data = {"name": resource_name, "state": payload.get("state", "SUCCEEDED")}
+            if not isinstance(resp_data, dict):
+                resp_data = {"name": resource_name, "state": payload.get("state", "SUCCEEDED")}
+            logger.info(
+                "Successfully registered Vertex AI EvaluationRun: %s",
+                resp_data.get("name", url),
+            )
+            return True, resp_data
+        else:
+            logger.warning(
+                "Vertex AI EvaluationRun API returned HTTP %d: %s. Continuing with local scorecard.",
+                resp.status_code,
+                resp.text,
+            )
+            return False, None
+    except Exception as exc:
+        logger.warning(
+            "Unable to publish to live Vertex AI EvaluationRun service (%s). Scorecard recorded locally.",
+            exc,
+        )
+        return False, None
+
+
 def run_evaluation(
     dataset_path: str,
     output_path: str,
@@ -622,6 +901,8 @@ def run_evaluation(
     min_tool_call_accuracy: float = DEFAULT_MIN_TOOL_CALL_ACCURACY,
     mock_mode: bool = True,
     scorer_type: str = "custom",
+    publish_evaluation_run_enabled: bool = True,
+    api_endpoint: Optional[str] = None,
 ) -> Tuple[bool, Dict[str, Any]]:
     import math
 
@@ -835,6 +1116,48 @@ def run_evaluation(
     )
     scorecard["metadata"]["vertex_experiments_logged"] = logged
 
+    # 2. Build and publish Vertex AI EvaluationRun resource (linked to Reasoning Engine)
+    eval_run_payload = build_evaluation_run_payload(
+        agent_engine_id=agent_engine_id,
+        run_id=run_id,
+        canary_phase=canary_phase,
+        metrics={
+            "average_groundedness": avg_groundedness,
+            "average_hallucination_rate": avg_hallucination,
+            "average_tool_call_accuracy": avg_tool_accuracy,
+        },
+        total_items=count,
+        passed_items=passed_scenarios_count,
+        quality_gate_passed=quality_gate_passed,
+        dataset_version=str(dataset.get("version", "unknown")),
+        dataset_path=dataset_path,
+        evaluation_experiment_name=experiment_name,
+        project_id=project_id,
+        location=location,
+    )
+    eval_run_logged = False
+    eval_run_resp = None
+    if publish_evaluation_run_enabled:
+        eval_run_logged, eval_run_resp = publish_evaluation_run(
+            project_id=project_id,
+            location=location,
+            payload=eval_run_payload,
+            mock_mode=mock_mode,
+            api_endpoint=api_endpoint,
+        )
+    else:
+        logger.info("EvaluationRun publishing skipped (disabled via configuration)")
+    scorecard["metadata"]["vertex_evaluation_run_logged"] = eval_run_logged
+    eval_run_resource_name = (
+        eval_run_resp["name"]
+        if (eval_run_resp and isinstance(eval_run_resp, dict) and "name" in eval_run_resp)
+        else None
+    )
+    scorecard["metadata"]["evaluation_run_resource_name"] = eval_run_resource_name
+    if eval_run_resource_name:
+        eval_run_payload["name"] = eval_run_resource_name
+    scorecard["evaluation_run"] = eval_run_payload
+
     # Write output scorecard (after experiments logged to ensure disk consistency)
     output_dir = os.path.dirname(os.path.abspath(output_path))
     if output_dir:
@@ -917,6 +1240,12 @@ def parse_args() -> argparse.Namespace:
         except (ValueError, TypeError):
             return default_val
 
+    def _get_bool_env(var_name: str, default_val: bool) -> bool:
+        val = os.getenv(var_name)
+        if val is None or not val.strip():
+            return default_val
+        return val.strip().lower() in ("true", "1", "yes")
+
     def _parse_threshold_arg(val: Any) -> float:
         try:
             f = float(val)
@@ -950,7 +1279,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mock",
         action="store_true",
-        default=os.getenv("MOCK_AGENT", "true").lower() in ("true", "1", "yes"),
+        default=_get_bool_env("MOCK_AGENT", True),
         help="Run in mock evaluation mode",
     )
     parser.add_argument(
@@ -964,6 +1293,24 @@ def parse_args() -> argparse.Namespace:
         default=os.getenv("SCORER_TYPE", "custom"),
         choices=["custom", "rapid", "managed"],
         help="Evaluation scoring engine",
+    )
+    parser.add_argument(
+        "--publish-evaluation-run",
+        dest="publish_evaluation_run",
+        action="store_true",
+        default=_get_bool_env("PUBLISH_EVALUATION_RUN", True),
+        help="Publish EvaluationRun resource to Vertex AI Agent Platform",
+    )
+    parser.add_argument(
+        "--no-publish-evaluation-run",
+        dest="publish_evaluation_run",
+        action="store_false",
+        help="Disable publishing EvaluationRun resource",
+    )
+    parser.add_argument(
+        "--api-endpoint",
+        default=os.getenv("VERTEX_EVALUATION_ENDPOINT"),
+        help="Vertex AI Evaluation API endpoint URL override",
     )
     return parser.parse_args()
 
@@ -986,6 +1333,8 @@ def main() -> None:
             min_tool_call_accuracy=args.min_tool_call_accuracy,
             mock_mode=args.mock,
             scorer_type=args.scorer,
+            publish_evaluation_run_enabled=args.publish_evaluation_run,
+            api_endpoint=args.api_endpoint,
         )
         if passed:
             logger.info("[SUCCESS] Production canary evaluation passed all quality gates.")
