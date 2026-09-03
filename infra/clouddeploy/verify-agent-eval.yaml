@@ -1,0 +1,92 @@
+apiVersion: deploy.cloud.google.com/v1
+kind: DeliveryPipeline
+metadata:
+  name: conductor-v3-pipeline
+  labels:
+    app: conductor-v3
+    tier: enterprise
+description: Enterprise Canary Delivery Pipeline for Conductor v3 with In-Pipeline Agent Evaluation
+serialPipeline:
+  stages:
+    - targetId: dev
+      profiles:
+        - dev
+      strategy:
+        standard:
+          verify: true
+    - targetId: staging
+      profiles:
+        - staging
+      strategy:
+        standard:
+          verify: true
+    - targetId: prod
+      profiles:
+        - prod
+      strategy:
+        canary:
+          runtimeConfig:
+            cloudRun:
+              automaticTrafficControl: true
+          canaryDeployment:
+            percentages:
+              - 25
+              - 50
+            verify: true
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Target
+metadata:
+  name: prod
+  labels:
+    env: prod
+    app: conductor-v3
+description: Production Environment with Dedicated Private Worker Pool and Canary Evaluation Gates
+requireApproval: true
+run:
+  location: projects/riccardo-blog-test-v1/locations/us-central1
+deployParameters:
+  name: conductor-v3-prod
+  labels.env: prod
+  maxScale: "20"
+  apphub-display-name: "The Conductor v3 - Production"
+  apphub-description: "Production environment for Go serverless multi-agent platform"
+  ENVIRONMENT: "production"
+  AGENT_DISPLAY_NAME: "The Conductor v3 (Production)"
+  AGENT_ENGINE_ID: "projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/1423301859237429248"
+  THRESHOLD_GROUNDEDNESS: "0.80"
+  THRESHOLD_HALLUCINATION_RATE: "0.05"
+  THRESHOLD_TOOL_CALL_ACCURACY: "0.90"
+  VERTEX_EXPERIMENT_NAME: "conductor-v3-prod-canary-eval"
+  EVAL_DATASET_PATH: "data/golden_eval_dataset.json"
+  EVAL_SCORECARD_PATH: "scorecard.json"
+executionConfigs:
+  - usages:
+      - RENDER
+      - DEPLOY
+      - VERIFY
+    workerPool: projects/riccardo-blog-test-v1/locations/us-central1/workerPools/cloudbuild-workerpool
+    serviceAccount: 105792947502-compute@developer.gserviceaccount.com
+    artifactStorage: gs://us-central1.deploy-artifacts.riccardo-blog-test-v1.appspot.com
+    executionTimeout: 600s
+---
+apiVersion: deploy.cloud.google.com/v1
+kind: Automation
+metadata:
+  name: conductor-v3-pipeline/auto-advance-canary
+  labels:
+    app: conductor-v3
+    env: prod
+description: Enterprise Automation to advance canary rollout phases post-agent-evaluation verification
+suspended: false
+serviceAccount: 105792947502-compute@developer.gserviceaccount.com
+selector:
+  targets:
+    - id: prod
+rules:
+  - advanceRolloutRule:
+      id: "advance-canary-phases"
+      sourcePhases:
+        - "canary-25"
+        - "canary-50"
+      wait: 0m

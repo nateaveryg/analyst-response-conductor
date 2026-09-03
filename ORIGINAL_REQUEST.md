@@ -674,3 +674,121 @@ Update pipeline conformance tests in tests/test_ci_cd_pipeline_configurations.py
 
 ### Independent Victory Audit
 - [ ] Independent victory auditor audits the changes and issues VICTORY CONFIRMED with 0 defects.
+
+
+## Follow-up — 2026-09-02T22:13:37Z
+
+# Teamwork Project Prompt
+
+This is a single self-contained fix; keep it small and focused. Requested team: Small focused team.
+
+Configure, register, and verify an automated Cloud Build 2nd-generation trigger for Conductor v3 connected via Developer Connect to the GitHub repository `nateaveryg/analyst-response-conductor`. Ensure git pushes to `main` trigger automated container builds and initiate Google Cloud Deploy releases.
+
+Working directory: `/usr/local/google/home/averyn/agentdemos/rficonductorv2`
+Integrity mode: development
+
+## Reference Material
+* Architectural Decision Record: `docs/adr/ADR-20260902-05-cloud-deploy-private-pools-and-single-artifact-promotion.md`
+* Implementation Plan: `pipeline_optimization_and_triggers_plan.md`
+* Build Manifest: `cloudbuild-v3.yaml`
+* Delivery Pipeline: `clouddeploy-v3.yaml` (pipeline `conductor-v3-pipeline` in `us-central1`)
+* Developer Connect Connection: `projects/riccardo-blog-test-v1/locations/us-east4/connections/github-testing-02`
+* Git Repository Link: `projects/riccardo-blog-test-v1/locations/us-east4/connections/github-testing-02/gitRepositoryLinks/nateaveryg-analyst-response-conductor`
+
+## Requirements
+
+### R1. Cloud Build 2nd-Gen Trigger Declaration & Provisioning
+Create a declarative trigger configuration file under `infra/triggers/` and register the 2nd-generation Cloud Build trigger in Google Cloud (`riccardo-blog-test-v1`, region `us-central1`).
+The trigger must:
+1. Connect to Developer Connect repository link `projects/riccardo-blog-test-v1/locations/us-east4/connections/github-testing-02/gitRepositoryLinks/nateaveryg-analyst-response-conductor`.
+2. Fire on push events matching branch `^main$`.
+3. Filter on file changes matching: `backend/**`, `infra/**`, `Dockerfile.v3`, `cloudbuild-v3.yaml`, `clouddeploy-v3.yaml`, `skaffold-v3.yaml`.
+4. Execute `cloudbuild-v3.yaml` with substitution variables (`_REGION=us-central1`, `_REPO_NAME=conductor-repo`, `_SERVICE_NAME=conductor-v3`, `_DELIVERY_PIPELINE_NAME=conductor-v3-pipeline`).
+
+### R2. Test Conformance & Validation
+Update and extend repository test suites (such as `tests/test_ci_cd_pipeline_configurations.py`) to validate the declarative trigger manifest, schema properties, substitution variables, and path inclusion filters. All test suites in the repository must pass cleanly.
+
+### R3. End-to-End Trigger Invocation & Verification
+Execute a live trigger run (or test push) to verify that the 2nd-gen trigger fires, Cloud Build executes the multi-stage build, and a new release is created in Cloud Deploy (`conductor-v3-pipeline`), initiating rollout to the `dev` target.
+
+## Acceptance Criteria
+
+### Declarative Configuration & Registration
+- [ ] Trigger definition file exists under `infra/triggers/` with valid schema.
+- [ ] 2nd-generation Cloud Build trigger `conductor-v3-ci-trigger` is registered in `riccardo-blog-test-v1` / `us-central1`.
+- [ ] `gcloud builds triggers describe conductor-v3-ci-trigger --region=us-central1` confirms binding to Developer Connect repository link `nateaveryg-analyst-response-conductor`.
+
+### Test Conformance
+- [ ] `./.venv/bin/pytest tests/test_ci_cd_pipeline_configurations.py -v` passes 100%.
+- [ ] Full repository test suite (`./.venv/bin/pytest`) passes cleanly with 0 failures.
+
+### Live Trigger & Pipeline Verification
+- [ ] Trigger invocation initiates a build run that completes successfully (or advances to active Cloud Deploy release creation).
+- [ ] Cloud Deploy `conductor-v3-pipeline` receives a new release from the build run.
+
+### Independent Victory Audit
+- [ ] Independent victory auditor inspects all changes and verifies zero defects.
+
+## 2026-09-03T19:08:46Z
+
+# Teamwork Project Prompt
+
+> Status: Launched
+> Goal: Multi-agent execution via teamwork_preview
+> Requested team: Small focused team (SWE Light)
+
+This is a single self-contained fix; keep it small and focused. Requested team: Small focused team.
+
+Incorporate the verified production agent evaluation subsystem from `conductor_v3_prod_eval` into the primary Conductor v3 repository `rficonductorv2`. Integrate the canary evaluation verify phase into Cloud Deploy and Skaffold manifests, and verify all test suites pass.
+
+Working directory: `/usr/local/google/home/averyn/agentdemos/rficonductorv2`
+Integrity mode: development
+
+## Reference Material
+* Source evaluation artifacts: `/usr/local/google/home/averyn/teamwork_projects/conductor_v3_prod_eval`
+* ADR: `/usr/local/google/home/averyn/teamwork_projects/conductor_v3_prod_eval/docs/adr/ADR-20260903-08-production-canary-agent-evaluation.md`
+* Evaluation Runner: `/usr/local/google/home/averyn/teamwork_projects/conductor_v3_prod_eval/scripts/evaluate_production_agent.py`
+* Golden Dataset: `/usr/local/google/home/averyn/teamwork_projects/conductor_v3_prod_eval/data/golden_eval_dataset.json`
+* Verify Manifests: `/usr/local/google/home/averyn/teamwork_projects/conductor_v3_prod_eval/infra/clouddeploy/`
+* Delivery Pipeline: `clouddeploy-v3.yaml`
+* Skaffold Manifest: `skaffold-v3.yaml`
+* Parameterized Template: `infra/cloudrun/service-v3.yaml.template`
+
+## Requirements
+
+### R1. Merge Evaluation Artifacts into Primary Repository
+Copy and align the verified evaluation assets into `/usr/local/google/home/averyn/agentdemos/rficonductorv2`:
+1. Place ADR in `docs/adr/ADR-20260903-08-production-canary-agent-evaluation.md`.
+2. Place evaluation runner in `scripts/evaluate_production_agent.py` and dataset in `data/golden_eval_dataset.json`.
+3. Align imports, environment variables, and default paths with repository standards.
+
+### R2. Cloud Deploy Pipeline & Skaffold Integration
+Integrate the agent evaluation verify phase into the canonical v3 delivery pipeline:
+1. Update `clouddeploy-v3.yaml` to declare a canary verify phase for `canary-25` and `canary-50` in `conductor-v3-pipeline`.
+2. Update `skaffold-v3.yaml` with the custom verify action and container execution parameters.
+3. Preserve private worker pool routing (`cloudbuild-workerpool`) and 600-second execution timeouts per `ADR-20260902-05`.
+
+### R3. Test Suite Integration & Conformance
+Incorporate and update test coverage across the repository:
+1. Add `tests/test_agent_evaluation.py` to repository tests.
+2. Update `tests/test_ci_cd_pipeline_configurations.py` and `tests/test_v3_container_and_pipeline.py` to validate verify phase declarations, threshold environment variables, and Skaffold verify actions.
+3. Ensure all existing 287+ repository tests and Go backend unit tests pass 100%.
+
+## Acceptance Criteria
+
+### Repository Artifacts & Integration
+- [ ] `docs/adr/ADR-20260903-08-production-canary-agent-evaluation.md` is committed under `docs/adr/`.
+- [ ] `scripts/evaluate_production_agent.py` and `data/golden_eval_dataset.json` are present in the repository.
+- [ ] `clouddeploy-v3.yaml` declares verify configurations for production canary targets.
+- [ ] `skaffold-v3.yaml` declares the corresponding verify custom action.
+
+### Test Suite Execution
+- [ ] `./.venv/bin/pytest tests/test_agent_evaluation.py -v` passes 100% (52/52 tests).
+- [ ] Full repository test suite (`./.venv/bin/pytest`) passes cleanly with 0 failures (>= 339 passing tests).
+- [ ] Go backend tests (`go test ./...` in `backend/`) pass cleanly with 0 failures.
+
+### Independent Victory Audit
+- [ ] Independent victory auditor inspects all repository modifications and confirms zero defects.
+
+---
+*Next: when approved → delegate via invoke_subagent (see Delegation Protocol)*

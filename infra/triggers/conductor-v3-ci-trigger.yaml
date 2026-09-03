@@ -1,0 +1,19 @@
+name: conductor-v3-ci-trigger
+description: Automated Cloud Build 2nd-generation CI trigger for Conductor v3 via Developer Connect
+filename: cloudbuild-v3.yaml
+developerConnectEventConfig:
+  gitRepositoryLink: projects/riccardo-blog-test-v1/locations/us-east4/connections/github-testing-02/gitRepositoryLinks/nateaveryg-analyst-response-conductor
+  push:
+    branch: ^main$
+includedFiles:
+  - backend/**
+  - infra/**
+  - Dockerfile.v3
+  - cloudbuild-v3.yaml
+  - clouddeploy-v3.yaml
+  - skaffold-v3.yaml
+substitutions:
+  _DELIVERY_PIPELINE_NAME: conductor-v3-pipeline
+  _REGION: us-central1
+  _REPO_NAME: conductor-repo
+  _SERVICE_NAME: conductor-v3

@@ -26,6 +26,70 @@ profiles:
     manifests:
       rawYaml:
         - infra/cloudrun/service-v3.yaml.template
+customActions:
+  - name: verify-production-agent-eval
+    containers:
+      - name: agent-evaluator
+        image: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+        env:
+          - name: CLOUD_DEPLOY_PROJECT
+            value: "riccardo-blog-test-v1"
+          - name: CLOUD_DEPLOY_LOCATION
+            value: "us-central1"
+          - name: AGENT_ENGINE_ID
+            value: "projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/1423301859237429248"
+          - name: THRESHOLD_GROUNDEDNESS
+            value: "0.80"
+          - name: THRESHOLD_HALLUCINATION_RATE
+            value: "0.05"
+          - name: THRESHOLD_TOOL_CALL_ACCURACY
+            value: "0.90"
+          - name: VERTEX_EXPERIMENT_NAME
+            value: "conductor-v3-prod-canary-eval"
+          - name: EVAL_DATASET_PATH
+            value: "data/golden_eval_dataset.json"
+          - name: EVAL_SCORECARD_PATH
+            value: "scorecard.json"
+          - name: CANARY_PHASE
+            value: "canary-25"
+          - name: MOCK_AGENT
+            value: "true"
+        command:
+          - /bin/bash
+          - -c
+          - |
+            set -euo pipefail
+            echo "================================================================="
+            echo "Executing Conductor v3 Production Agent Evaluation Verify Action"
+            echo "Phase:     ${CANARY_PHASE:-canary-25}"
+            echo "Target ID: ${CLOUD_DEPLOY_TARGET:-prod}"
+            echo "Mock Mode: ${MOCK_AGENT:-true}"
+            echo "================================================================="
+            for candidate in "." ".." "/workspace" "/workspace/source" "/app"; do
+              if [ -f "$candidate/scripts/evaluate_production_agent.py" ]; then
+                cd "$candidate"
+                break
+              fi
+            done
+            EXTRA_ARGS=""
+            if [ "${MOCK_AGENT:-true}" = "false" ] || [ "${MOCK_AGENT:-true}" = "0" ]; then
+              EXTRA_ARGS="--live"
+            else
+              EXTRA_ARGS="--mock"
+            fi
+            python3 scripts/evaluate_production_agent.py \
+              --dataset="${EVAL_DATASET_PATH:-data/golden_eval_dataset.json}" \
+              --output="${EVAL_SCORECARD_PATH:-scorecard.json}" \
+              --agent-engine-id="${AGENT_ENGINE_ID}" \
+              --project="${CLOUD_DEPLOY_PROJECT:-riccardo-blog-test-v1}" \
+              --location="${CLOUD_DEPLOY_LOCATION:-us-central1}" \
+              --experiment-name="${VERTEX_EXPERIMENT_NAME:-conductor-v3-prod-canary-eval}" \
+              --phase="${CANARY_PHASE:-canary-25}" \
+              --min-groundedness="${THRESHOLD_GROUNDEDNESS:-0.80}" \
+              --max-hallucination-rate="${THRESHOLD_HALLUCINATION_RATE:-0.05}" \
+              --min-tool-call-accuracy="${THRESHOLD_TOOL_CALL_ACCURACY:-0.90}" \
+              ${EXTRA_ARGS}
+            echo "Verify action completed successfully."
 verify:
   - name: verify-conductor-v3
     container:
@@ -241,3 +305,59 @@ verify:
           fi
           chmod +x ./infra/cloudrun/verify_cloudrun_v3.sh
           ./infra/cloudrun/verify_cloudrun_v3.sh "${CLOUD_RUN_SERVICE_URLS:-http://127.0.0.1:8080}"
+  - name: verify-agent-evaluation
+    container:
+      name: conductor-agent-eval-verifier
+      image: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+      env:
+        - name: CLOUD_DEPLOY_PROJECT
+          value: "riccardo-blog-test-v1"
+        - name: CLOUD_DEPLOY_LOCATION
+          value: "us-central1"
+        - name: AGENT_ENGINE_ID
+          value: "projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/1423301859237429248"
+        - name: VERTEX_EXPERIMENT_NAME
+          value: "conductor-v3-prod-canary-eval"
+        - name: EVAL_DATASET_PATH
+          value: "data/golden_eval_dataset.json"
+        - name: EVAL_SCORECARD_PATH
+          value: "scorecard.json"
+        - name: CANARY_PHASE
+          value: "canary-25"
+        - name: THRESHOLD_GROUNDEDNESS
+          value: "0.80"
+        - name: THRESHOLD_HALLUCINATION_RATE
+          value: "0.05"
+        - name: THRESHOLD_TOOL_CALL_ACCURACY
+          value: "0.90"
+        - name: MOCK_AGENT
+          value: "true"
+      command:
+        - /bin/bash
+        - -c
+        - |
+          set -euo pipefail
+          for candidate in "." ".." "/workspace" "/workspace/source" "/app"; do
+            if [ -f "$candidate/scripts/evaluate_production_agent.py" ]; then
+              cd "$candidate"
+              break
+            fi
+          done
+          EXTRA_ARGS=""
+          if [ "${MOCK_AGENT:-true}" = "false" ] || [ "${MOCK_AGENT:-true}" = "0" ]; then
+            EXTRA_ARGS="--live"
+          else
+            EXTRA_ARGS="--mock"
+          fi
+          python3 scripts/evaluate_production_agent.py \
+            --dataset="${EVAL_DATASET_PATH:-data/golden_eval_dataset.json}" \
+            --output="${EVAL_SCORECARD_PATH:-scorecard.json}" \
+            --agent-engine-id="${AGENT_ENGINE_ID}" \
+            --project="${CLOUD_DEPLOY_PROJECT:-riccardo-blog-test-v1}" \
+            --location="${CLOUD_DEPLOY_LOCATION:-us-central1}" \
+            --experiment-name="${VERTEX_EXPERIMENT_NAME:-conductor-v3-prod-canary-eval}" \
+            --min-groundedness="${THRESHOLD_GROUNDEDNESS:-0.80}" \
+            --max-hallucination-rate="${THRESHOLD_HALLUCINATION_RATE:-0.05}" \
+            --min-tool-call-accuracy="${THRESHOLD_TOOL_CALL_ACCURACY:-0.90}" \
+            --phase="${CANARY_PHASE:-canary-25}" \
+            ${EXTRA_ARGS}

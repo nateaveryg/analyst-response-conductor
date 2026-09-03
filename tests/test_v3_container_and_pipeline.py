@@ -311,6 +311,37 @@ class TestConductorV3ContainerAndPipeline(unittest.TestCase):
             canonical = f.read()
         self.assertEqual(decoded, canonical, "Embedded base64 prober in skaffold-v3.yaml must match infra/cloudrun/verify_cloudrun_v3.sh byte-for-byte")
 
+        # Verify customActions for agent evaluation
+        self.assertIn("customActions", sk, "skaffold-v3.yaml must declare customActions")
+        custom_actions = sk["customActions"]
+        eval_action = next((a for a in custom_actions if a.get("name") == "verify-production-agent-eval"), None)
+        self.assertIsNotNone(eval_action, "skaffold-v3.yaml must declare verify-production-agent-eval customAction")
+        containers = eval_action.get("containers", [])
+        self.assertGreater(len(containers), 0)
+        eval_c = containers[0]
+        self.assertEqual(eval_c.get("image"), "gcr.io/google.com/cloudsdktool/cloud-sdk:slim")
+        eval_env = {e.get("name"): e.get("value") for e in eval_c.get("env", [])}
+        self.assertEqual(eval_env.get("THRESHOLD_GROUNDEDNESS"), "0.80")
+        self.assertEqual(eval_env.get("THRESHOLD_HALLUCINATION_RATE"), "0.05")
+        self.assertEqual(eval_env.get("THRESHOLD_TOOL_CALL_ACCURACY"), "0.90")
+        self.assertEqual(eval_env.get("VERTEX_EXPERIMENT_NAME"), "conductor-v3-prod-canary-eval")
+        self.assertEqual(eval_env.get("MOCK_AGENT"), "true")
+
+        eval_cmd = " ".join(str(c) for c in eval_c.get("command", []))
+        self.assertIn("scripts/evaluate_production_agent.py", eval_cmd)
+        self.assertIn("EXTRA_ARGS", eval_cmd)
+
+        # Verify verify stanza for agent evaluation
+        verify_stanzas = sk.get("verify", [])
+        agent_verify = next((v for v in verify_stanzas if v.get("name") == "verify-agent-evaluation"), None)
+        self.assertIsNotNone(agent_verify, "skaffold-v3.yaml must declare verify-agent-evaluation in verify: stanza")
+        c_verify = agent_verify.get("container", {})
+        self.assertEqual(c_verify.get("image"), "gcr.io/google.com/cloudsdktool/cloud-sdk:slim")
+        verify_env = {e.get("name"): e.get("value") for e in c_verify.get("env", [])}
+        self.assertEqual(verify_env.get("THRESHOLD_GROUNDEDNESS"), "0.80")
+        self.assertEqual(verify_env.get("THRESHOLD_HALLUCINATION_RATE"), "0.05")
+        self.assertEqual(verify_env.get("THRESHOLD_TOOL_CALL_ACCURACY"), "0.90")
+
     def test_05_cloudrun_service_v3_specification(self):
         """Verifies infra/cloudrun/service-v3.yaml and service-v3.yaml.template memory, CPU, health probes, and runtime."""
         for svc_file in ["service-v3.yaml", "service-v3.yaml.template"]:
@@ -386,6 +417,107 @@ class TestConductorV3ContainerAndPipeline(unittest.TestCase):
             self.assertEqual(fe_envs.get("SERVICE_VERSION"), "3.3.1", f"SERVICE_VERSION in {fe_file} must be 3.3.1")
             self.assertEqual(fe_envs.get("VERIFICATION_MARKER"), "v3.3.1-verified", f"VERIFICATION_MARKER in {fe_file} must be v3.3.1-verified")
 
+    def test_06_cloudbuild_v3_trigger_specification(self):
+        """Verifies infra/triggers/conductor-v3-ci-trigger.yaml schema, Developer Connect binding, and filters."""
+        trigger_path = os.path.join(REPO_ROOT, "infra", "triggers", "conductor-v3-ci-trigger.yaml")
+        self.assertTrue(os.path.exists(trigger_path), "conductor-v3-ci-trigger.yaml must exist under infra/triggers/")
+
+        docs = load_yaml_documents(trigger_path)
+        self.assertEqual(len(docs), 1)
+        trigger = docs[0]
+
+        self.assertEqual(trigger.get("name"), "conductor-v3-ci-trigger")
+        self.assertEqual(trigger.get("filename"), "cloudbuild-v3.yaml")
+
+        dc_config = trigger.get("developerConnectEventConfig", {})
+        expected_repo = (
+            "projects/riccardo-blog-test-v1/locations/us-east4/connections/github-testing-02/"
+            "gitRepositoryLinks/nateaveryg-analyst-response-conductor"
+        )
+        self.assertEqual(dc_config.get("gitRepositoryLink"), expected_repo)
+        self.assertEqual(dc_config.get("push", {}).get("branch"), "^main$")
+
+        included = trigger.get("includedFiles", [])
+        expected_included = [
+            "backend/**",
+            "infra/**",
+            "Dockerfile.v3",
+            "cloudbuild-v3.yaml",
+            "clouddeploy-v3.yaml",
+            "skaffold-v3.yaml",
+        ]
+        self.assertEqual(set(included), set(expected_included))
+
+        subs = trigger.get("substitutions", {})
+        self.assertEqual(subs.get("_REGION"), "us-central1")
+        self.assertEqual(subs.get("_REPO_NAME"), "conductor-repo")
+        self.assertEqual(subs.get("_SERVICE_NAME"), "conductor-v3")
+        self.assertEqual(subs.get("_DELIVERY_PIPELINE_NAME"), "conductor-v3-pipeline")
+
+    def test_07_cloudbuild_v3_trigger_adverse_changeset_filtering(self):
+        """Adversarially validates that commits touching only non-pipeline files are suppressed."""
+        import fnmatch
+        trigger_path = os.path.join(REPO_ROOT, "infra", "triggers", "conductor-v3-ci-trigger.yaml")
+        trigger = load_yaml_documents(trigger_path)[0]
+        included_globs = trigger.get("includedFiles", [])
+
+        def normalize_git_path(p: str) -> str:
+            if not isinstance(p, str):
+                return ""
+            norm = p.strip()
+            while norm.startswith("./") or norm.startswith("/"):
+                if norm.startswith("./"):
+                    norm = norm[2:]
+                elif norm.startswith("/"):
+                    norm = norm[1:]
+            return norm
+
+        def matches_glob(path: str, glob_pattern: str) -> bool:
+            norm_path = normalize_git_path(path)
+            if not norm_path:
+                return False
+            if glob_pattern.endswith("/**"):
+                prefix = glob_pattern[:-3]
+                return norm_path.startswith(prefix + "/")
+            return fnmatch.fnmatch(norm_path, glob_pattern)
+
+        def should_trigger(changeset: list) -> bool:
+            if not changeset:
+                return False
+            return any(any(matches_glob(f, g) for g in included_globs) for f in changeset)
+
+        # Adverse non-pipeline changesets (MUST NOT fire trigger)
+        doc_changes = ["README.md", "docs/architecture.md", "docs/workflow_diagrams.jpg"]
+        self.assertFalse(should_trigger(doc_changes), "Documentation-only commits must be suppressed")
+
+        fe_changes = ["frontend/lib/main.dart", "frontend/pubspec.yaml"]
+        self.assertFalse(should_trigger(fe_changes), "Frontend-only commits must be suppressed")
+
+        ae_changes = ["app/agent_engine_go/agent/conductor_agent.go", "cloudbuild-agent-engine.yaml"]
+        self.assertFalse(should_trigger(ae_changes), "Agent Engine commits must be suppressed")
+
+        near_misses = ["backend_extra/foo.go", "Dockerfile.v3.bak", "cloudbuild-v3.yaml.old", "infra_old/main.tf"]
+        self.assertFalse(should_trigger(near_misses), "Near-miss files must be suppressed")
+
+        # Boundary prefix tests (bare root files matching directory prefixes must not match)
+        bare_files = ["backend", "infra"]
+        self.assertFalse(should_trigger(bare_files), "Bare root files must not match directory globs")
+
+        # Dotfile and null/invalid changesets
+        self.assertFalse(should_trigger([".gitignore", ".github/workflows/ci.yaml"]), "Dotfiles must be suppressed")
+        self.assertFalse(should_trigger([None, "", "   ", 789]), "Invalid entries must be suppressed")
+        self.assertFalse(should_trigger([]), "Empty changeset must be suppressed")
+
+        # Mixed and pipeline changesets (MUST fire trigger)
+        self.assertTrue(should_trigger(["README.md", "backend/cmd/server/main.go"]))
+        self.assertTrue(should_trigger(["docs/index.md", "cloudbuild-v3.yaml"]))
+        self.assertTrue(should_trigger(["clouddeploy-v3.yaml"]))
+        self.assertTrue(should_trigger(["skaffold-v3.yaml"]))
+        self.assertTrue(should_trigger(["Dockerfile.v3"]))
+        self.assertTrue(should_trigger(["./backend/internal/agent/agent.go"]), "Relative path './' must trigger")
+        self.assertTrue(should_trigger(["./Dockerfile.v3"]), "Relative path './' must trigger")
+
 
 if __name__ == "__main__":
     unittest.main()
+

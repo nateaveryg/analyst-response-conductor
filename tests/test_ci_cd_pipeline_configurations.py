@@ -583,6 +583,285 @@ def test_template_parameters_declared_in_all_deploy_targets():
             )
 
 
+def test_cloudbuild_v3_trigger_manifest_existence_and_schema():
+    """Validates declarative trigger manifest exists under infra/triggers/ with valid schema."""
+    trigger_path = REPO_ROOT / "infra" / "triggers" / "conductor-v3-ci-trigger.yaml"
+    assert trigger_path.exists(), "infra/triggers/conductor-v3-ci-trigger.yaml must exist"
+
+    docs = load_yaml_file(trigger_path)
+    assert len(docs) == 1, "Trigger manifest must contain a single YAML document"
+    trigger = docs[0]
+
+    # 1. Trigger identity
+    assert trigger.get("name") == "conductor-v3-ci-trigger", "Trigger name must be conductor-v3-ci-trigger"
+    assert trigger.get("filename") == "cloudbuild-v3.yaml", "Trigger must execute cloudbuild-v3.yaml"
+    assert "description" in trigger and len(trigger["description"]) > 0
+
+    # 2. Developer Connect Event Config
+    assert "developerConnectEventConfig" in trigger, "Trigger must declare developerConnectEventConfig"
+    dc_config = trigger["developerConnectEventConfig"]
+    expected_repo_link = (
+        "projects/riccardo-blog-test-v1/locations/us-east4/connections/github-testing-02/"
+        "gitRepositoryLinks/nateaveryg-analyst-response-conductor"
+    )
+    assert dc_config.get("gitRepositoryLink") == expected_repo_link, (
+        f"gitRepositoryLink must match {expected_repo_link}, got {dc_config.get('gitRepositoryLink')}"
+    )
+
+    # 3. Push event filter
+    assert "push" in dc_config, "developerConnectEventConfig must configure push event"
+    push_config = dc_config["push"]
+    assert push_config.get("branch") == r"^main$", f"Push branch must match '^main$', got {push_config.get('branch')}"
+
+    # 4. Included files filter
+    assert "includedFiles" in trigger, "Trigger must declare includedFiles filter"
+    included_files = trigger["includedFiles"]
+    expected_included = [
+        "backend/**",
+        "infra/**",
+        "Dockerfile.v3",
+        "cloudbuild-v3.yaml",
+        "clouddeploy-v3.yaml",
+        "skaffold-v3.yaml",
+    ]
+    assert set(included_files) == set(expected_included), (
+        f"includedFiles must match expected set. Discrepancy: "
+        f"missing={set(expected_included) - set(included_files)}, extra={set(included_files) - set(expected_included)}"
+    )
+
+    # 5. Substitutions
+    assert "substitutions" in trigger, "Trigger must declare substitutions"
+    subs = trigger["substitutions"]
+    expected_subs = {
+        "_REGION": "us-central1",
+        "_REPO_NAME": "conductor-repo",
+        "_SERVICE_NAME": "conductor-v3",
+        "_DELIVERY_PIPELINE_NAME": "conductor-v3-pipeline",
+    }
+    for k, v in expected_subs.items():
+        assert subs.get(k) == v, f"Substitution {k} must equal '{v}', got '{subs.get(k)}'"
+
+
+def test_cloudbuild_v3_trigger_substitutions_contract_alignment():
+    """Validates trigger substitutions align 1:1 with cloudbuild-v3.yaml and clouddeploy-v3.yaml."""
+    trigger_path = REPO_ROOT / "infra" / "triggers" / "conductor-v3-ci-trigger.yaml"
+    trigger = load_yaml_file(trigger_path)[0]
+    trigger_subs = trigger.get("substitutions", {})
+
+    cb_path = REPO_ROOT / "cloudbuild-v3.yaml"
+    cb = load_yaml_file(cb_path)[0]
+    cb_subs = cb.get("substitutions", {})
+
+    # Check that every substitution supplied by trigger is declared in cloudbuild-v3.yaml
+    for key, value in trigger_subs.items():
+        assert key in cb_subs, f"Trigger substitution '{key}' not declared in cloudbuild-v3.yaml"
+        assert cb_subs[key] == value, f"Trigger substitution '{key}' value '{value}' drifts from cloudbuild-v3 default '{cb_subs[key]}'"
+
+    # Check that delivery pipeline name matches clouddeploy-v3.yaml
+    cd_path = REPO_ROOT / "clouddeploy-v3.yaml"
+    cd_docs = load_yaml_file(cd_path)
+    pipeline_doc = next(d for d in cd_docs if d.get("kind") == "DeliveryPipeline")
+    assert trigger_subs["_DELIVERY_PIPELINE_NAME"] == pipeline_doc["metadata"]["name"]
+
+
+def test_cloudbuild_v3_trigger_filter_precision_and_edge_cases():
+    """Validates path and branch filtering logic against adverse edge cases and changesets."""
+    import re
+    import fnmatch
+
+    trigger_path = REPO_ROOT / "infra" / "triggers" / "conductor-v3-ci-trigger.yaml"
+    trigger = load_yaml_file(trigger_path)[0]
+
+    branch_regex = trigger["developerConnectEventConfig"]["push"]["branch"]
+    branch_pattern = re.compile(branch_regex)
+
+    # 1. Branch matching assertions
+    assert branch_pattern.search("main") is not None, "Branch 'main' must match"
+    assert branch_pattern.search("Main") is None, "Branch 'Main' (case drift) must not match"
+    assert branch_pattern.search("main-fix") is None, "Branch 'main-fix' must not match"
+    assert branch_pattern.search("feature/main") is None, "Branch 'feature/main' must not match"
+    assert branch_pattern.search("origin/main") is None, "Branch 'origin/main' must not match"
+    assert branch_pattern.search("refs/heads/main") is None, "Branch 'refs/heads/main' must not match"
+    assert branch_pattern.search("staging") is None, "Branch 'staging' must not match"
+    assert branch_pattern.search("dev") is None, "Branch 'dev' must not match"
+    assert branch_pattern.search("") is None, "Empty branch must not match"
+
+    # 2. Path glob testing
+    included_globs = trigger["includedFiles"]
+
+    def normalize_git_path(p: str) -> str:
+        if not isinstance(p, str):
+            return ""
+        norm = p.strip()
+        while norm.startswith("./") or norm.startswith("/"):
+            if norm.startswith("./"):
+                norm = norm[2:]
+            elif norm.startswith("/"):
+                norm = norm[1:]
+        return norm
+
+    def matches_glob(path: str, glob_pattern: str) -> bool:
+        norm_path = normalize_git_path(path)
+        if not norm_path:
+            return False
+        if glob_pattern.endswith("/**"):
+            prefix = glob_pattern[:-3]
+            return norm_path.startswith(prefix + "/")
+        return fnmatch.fnmatch(norm_path, glob_pattern)
+
+    def matches_any_glob(path: str) -> bool:
+        return any(matches_glob(path, g) for g in included_globs)
+
+    def should_trigger_build(changeset: list) -> bool:
+        if not changeset:
+            return False
+        return any(matches_any_glob(f) for f in changeset)
+
+    # Positive matches (direct and relative paths)
+    assert matches_any_glob("backend/main.go")
+    assert matches_any_glob("backend/internal/agent/agent.go")
+    assert matches_any_glob("./backend/cmd/server/main.go"), "Relative path prefix './' must match"
+    assert matches_any_glob("infra/triggers/conductor-v3-ci-trigger.yaml")
+    assert matches_any_glob("./infra/triggers/conductor-v3-ci-trigger.yaml"), "Relative path prefix './' must match"
+    assert matches_any_glob("infra/cloudrun/service-v3.yaml.template")
+    assert matches_any_glob("Dockerfile.v3")
+    assert matches_any_glob("./Dockerfile.v3"), "Relative path prefix './' must match"
+    assert matches_any_glob("cloudbuild-v3.yaml")
+    assert matches_any_glob("clouddeploy-v3.yaml")
+    assert matches_any_glob("skaffold-v3.yaml")
+
+    # Negative matches (prefix drift, near-misses, dotfiles, boundaries, and non-pipeline files)
+    assert not matches_any_glob("backend"), "Bare file 'backend' must not match 'backend/**'"
+    assert not matches_any_glob("infra"), "Bare file 'infra' must not match 'infra/**'"
+    assert not matches_any_glob("subbackend/main.go"), "Prefix boundary 'subbackend' must not match 'backend/**'"
+    assert not matches_any_glob("subinfra/config.yaml"), "Prefix boundary 'subinfra' must not match 'infra/**'"
+    assert not matches_any_glob("backend_v2/main.go"), "'backend_v2' must not match 'backend/**'"
+    assert not matches_any_glob("infrastructure/service.yaml"), "'infrastructure' must not match 'infra/**'"
+    assert not matches_any_glob("Dockerfile.v3.bak"), "Suffix drift must not match"
+    assert not matches_any_glob("Dockerfile.v3.tmp"), "Suffix drift must not match"
+    assert not matches_any_glob("not_Dockerfile.v3"), "Prefix drift must not match"
+    assert not matches_any_glob("cloudbuild-v3.yaml.old"), "Suffix drift must not match"
+    assert not matches_any_glob("cloudbuild.yaml"), "Generic cloudbuild must not match"
+    assert not matches_any_glob("cloudbuild-agent-engine.yaml"), "Agent Engine build must not match"
+    assert not matches_any_glob("clouddeploy-v3.yaml.backup"), "Suffix drift must not match"
+    assert not matches_any_glob("clouddeploy-agent-engine.yaml"), "Agent Engine deploy must not match"
+    assert not matches_any_glob("skaffold-v3.yaml.disabled"), "Suffix drift must not match"
+    assert not matches_any_glob("frontend/lib/main.dart"), "Frontend must not match"
+    assert not matches_any_glob("frontend/pubspec.yaml"), "Frontend must not match"
+    assert not matches_any_glob("README.md"), "README must not match"
+    assert not matches_any_glob("docs/adr/ADR-20260902-05-cloud-deploy-private-pools-and-single-artifact-promotion.md")
+    assert not matches_any_glob(".gitignore"), ".gitignore must not match"
+    assert not matches_any_glob(".github/workflows/ci.yaml"), "GitHub workflows must not match"
+    assert not matches_any_glob("")
+    assert not matches_any_glob("   ")
+    assert not matches_any_glob(None), "None input must safely return False"
+    assert not matches_any_glob(123), "Non-string input must safely return False"
+
+    # 3. Adverse Changeset Evaluation (Commit-level suppression vs triggering)
+    # A. Documentation-only commits must be suppressed
+    doc_changeset = [
+        "README.md",
+        "docs/index.md",
+        "docs/adr/ADR-20260902-05-cloud-deploy-private-pools-and-single-artifact-promotion.md",
+        "docs/workflow_cloud_run_cicd.jpg",
+    ]
+    assert not should_trigger_build(doc_changeset), "Doc-only changeset must suppress trigger"
+
+    # B. Frontend-only commits must be suppressed
+    frontend_changeset = [
+        "frontend/lib/main.dart",
+        "frontend/pubspec.yaml",
+        "frontend/web/index.html",
+    ]
+    assert not should_trigger_build(frontend_changeset), "Frontend-only changeset must suppress trigger"
+
+    # C. Agent Engine commits must be suppressed
+    agent_changeset = [
+        "app/agent_engine_go/agent/conductor_agent.go",
+        "cloudbuild-agent-engine.yaml",
+    ]
+    assert not should_trigger_build(agent_changeset), "Agent Engine changeset must suppress trigger"
+
+    # D. Near-miss files changeset must be suppressed
+    near_miss_changeset = [
+        "backend_tools/script.sh",
+        "Dockerfile.v3.bak",
+        "cloudbuild-v3.yaml.old",
+        "infra_backup/config.yaml",
+    ]
+    assert not should_trigger_build(near_miss_changeset), "Near-miss changeset must suppress trigger"
+
+    # E. Empty, null, and non-string changesets must be suppressed
+    assert not should_trigger_build([]), "Empty changeset must suppress trigger"
+    assert not should_trigger_build([None, "", "   ", 456]), "Null/invalid changeset must suppress trigger"
+    assert not should_trigger_build([".gitignore", ".github/workflows/ci.yaml"]), "Dotfile changeset must suppress trigger"
+
+    # F. Mixed changesets (pipeline file + non-pipeline files) MUST trigger
+    assert should_trigger_build(["README.md", "backend/cmd/server/main.go"]), "Mixed changeset must fire trigger"
+    assert should_trigger_build(["docs/overview.md", ".gitignore", "clouddeploy-v3.yaml"]), "Mixed changeset must fire trigger"
+    assert should_trigger_build(["frontend/pubspec.yaml", "Dockerfile.v3"]), "Mixed changeset must fire trigger"
+    assert should_trigger_build([".gitignore", "./backend/main.go"]), "Relative path mixed changeset must fire trigger"
+
+
+def test_clouddeploy_v3_agent_evaluation_canary_verify_and_skaffold_actions():
+    """
+    Validates that:
+    1. clouddeploy-v3.yaml declares canary verify phases for canary-25 and canary-50 in conductor-v3-pipeline.
+    2. Target prod declares agent evaluation threshold environment variables and private pool executionConfig.
+    3. skaffold-v3.yaml declares verify-production-agent-eval customAction with container parameters.
+    """
+    # 1. Pipeline canary verify validation
+    cd_path = REPO_ROOT / "clouddeploy-v3.yaml"
+    cd_docs = load_yaml_file(cd_path)
+    pipeline = next((d for d in cd_docs if d.get("kind") == "DeliveryPipeline" and d.get("metadata", {}).get("name") == "conductor-v3-pipeline"), None)
+    assert pipeline is not None, "conductor-v3-pipeline must exist in clouddeploy-v3.yaml"
+
+    stages = pipeline["serialPipeline"]["stages"]
+    prod_stage = next((s for s in stages if s.get("targetId") == "prod"), None)
+    assert prod_stage is not None, "prod stage must exist in conductor-v3-pipeline"
+    canary = prod_stage.get("strategy", {}).get("canary", {})
+    assert canary.get("canaryDeployment", {}).get("verify") is True, "canaryDeployment.verify must be true"
+    assert canary.get("canaryDeployment", {}).get("percentages") == [25, 50], "canary percentages must be [25, 50]"
+
+    # 2. Target prod executionConfigs and approval gating
+    prod_target = next((d for d in cd_docs if d.get("kind") == "Target" and d.get("metadata", {}).get("name") == "prod"), None)
+    assert prod_target is not None, "prod target must exist in clouddeploy-v3.yaml"
+    assert prod_target.get("requireApproval") is True, "prod target must have requireApproval: true"
+
+    # Target prod private pool and timeout
+    exec_configs = prod_target.get("executionConfigs", [])
+    verify_cfg = next((c for c in exec_configs if "VERIFY" in c.get("usages", [])), None)
+    assert verify_cfg is not None, "prod executionConfigs must include VERIFY"
+    assert "cloudbuild-workerpool" in verify_cfg.get("workerPool", "")
+    assert verify_cfg.get("executionTimeout") == "600s"
+
+    # 3. Skaffold customActions and verify validation
+    sk_path = REPO_ROOT / "skaffold-v3.yaml"
+    sk_docs = load_yaml_file(sk_path)
+    sk = sk_docs[0]
+    assert "customActions" in sk, "skaffold-v3.yaml must declare customActions"
+    custom_actions = sk.get("customActions", [])
+    agent_eval_action = next((a for a in custom_actions if a.get("name") == "verify-production-agent-eval"), None)
+    assert agent_eval_action is not None, "customActions must contain verify-production-agent-eval"
+
+    containers = agent_eval_action.get("containers", [])
+    assert len(containers) > 0
+    c = containers[0]
+    assert c.get("image") == "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    env_vars = {e.get("name"): e.get("value") for e in c.get("env", [])}
+    assert env_vars.get("THRESHOLD_GROUNDEDNESS") == "0.80"
+    assert env_vars.get("THRESHOLD_HALLUCINATION_RATE") == "0.05"
+    assert env_vars.get("THRESHOLD_TOOL_CALL_ACCURACY") == "0.90"
+    assert env_vars.get("VERTEX_EXPERIMENT_NAME") == "conductor-v3-prod-canary-eval"
+    assert env_vars.get("CANARY_PHASE") == "canary-25"
+    assert env_vars.get("MOCK_AGENT") == "true"
+
+    cmd = " ".join(str(x) for x in c.get("command", []))
+    assert "scripts/evaluate_production_agent.py" in cmd
+    assert "EXTRA_ARGS" in cmd
+    assert "${MOCK_AGENT:-true}" in cmd
+
+
 if __name__ == "__main__":
     test_cloudbuild_yaml_structure_and_steps()
     test_clouddeploy_yaml_pipeline_and_targets()
@@ -600,8 +879,8 @@ if __name__ == "__main__":
     test_skaffold_v3_references_parameterized_template()
     test_clouddeploy_v3_deploy_parameters_and_private_worker_pool()
     test_template_parameters_declared_in_all_deploy_targets()
-    print("✅ All 16 CI/CD, Agent Registry, Template Parameterization & Private Pool tests passed successfully!")
-
-
-
-
+    test_cloudbuild_v3_trigger_manifest_existence_and_schema()
+    test_cloudbuild_v3_trigger_substitutions_contract_alignment()
+    test_cloudbuild_v3_trigger_filter_precision_and_edge_cases()
+    test_clouddeploy_v3_agent_evaluation_canary_verify_and_skaffold_actions()
+    print("✅ All 20 CI/CD, Agent Registry, Trigger, Pipeline & Agent Evaluation tests passed successfully!")

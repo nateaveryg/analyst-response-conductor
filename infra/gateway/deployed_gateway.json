@@ -10,5 +10,5 @@
   "model_armor_extension": "projects/riccardo-blog-test-v1/locations/us-central1/authzExtensions/conductor-model-armor-ext",
   "content_authz_policy": "projects/riccardo-blog-test-v1/locations/us-central1/authzPolicies/conductor-ingress-content-authz",
   "route_rules": "projects/riccardo-blog-test-v1/locations/global/httpRoutes/conductor-v3-gateway-routes",
-  "deployed_at": "2026-09-02T20:00:34Z"
+  "deployed_at": "2026-09-03T20:06:22Z"
 }

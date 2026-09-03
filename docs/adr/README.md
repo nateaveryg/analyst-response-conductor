@@ -16,6 +16,7 @@ This directory maintains the formal Architectural Decision Records (ADRs) govern
 | [**ADR-20260902-05**](file:///usr/local/google/home/averyn/agentdemos/rficonductorv2/docs/adr/ADR-20260902-05-cloud-deploy-private-pools-and-single-artifact-promotion.md) | 2026-09-02 | **Cloud Deploy Private Worker Pools & Single-Artifact Promotion** | Accepted | Single immutable container build across Dev/Staging/Prod, dedicated private worker pools, and manifest parameterization. |
 | [**ADR-20260902-06**](file:///usr/local/google/home/averyn/agentdemos/rficonductorv2/docs/adr/ADR-20260902-06-vertex-agent-engine-lifecycle-and-in-place-updates.md) | 2026-09-02 | **Vertex AI Agent Engine Lifecycle & In-Place Updates** | Accepted | Strict 1:1 tier mapping, removal of orphaned instances, and mandatory in-place updates via Skaffold. |
 | [**ADR-20260902-07**](file:///usr/local/google/home/averyn/agentdemos/rficonductorv2/docs/adr/ADR-20260902-07-three-tier-environment-strategy-and-canary-evaluation.md) | 2026-09-02 | **Retention of Dev Tier & Production Canary Evaluation** | Accepted | Dedicated Dev pairing for Flutter Web frontend, Staging operational gate, and live semantic evaluation in Production Canaries. |
+| [**ADR-20260903-08**](file:///usr/local/google/home/averyn/agentdemos/rficonductorv2/docs/adr/ADR-20260903-08-production-canary-agent-evaluation.md) | 2026-09-03 | **Production Canary Agent Evaluation** | Accepted | Embed evaluation in canary verify phases, custom deterministic scorers, Vertex AI Experiments tracking, and automated rollback gates. |
 
 ---
 

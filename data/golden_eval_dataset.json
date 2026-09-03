@@ -1,0 +1,482 @@
+{
+  "version": "3.3.2",
+  "dataset_name": "conductor-v3-production-golden-eval",
+  "description": "Authoritative golden evaluation dataset for Conductor v3 production agent evaluation during Cloud Deploy canary verification.",
+  "created_date": "2026-09-03",
+  "target_agent_engine_id": "projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/1423301859237429248",
+  "scenarios": [
+    {
+      "scenario_id": "SCENARIO-001",
+      "name": "CNAPP Workload Vulnerability Scanning",
+      "category": "CNAPP",
+      "prompt": "Identify critical CVEs in production GKE cluster clusters/prod-us-central1 and recommend mitigation steps.",
+      "reference_context": "Production cluster projects/riccardo-blog-test-v1/locations/us-central1/clusters/prod-us-central1 was scanned by Google Cloud CNAPP agentless scanner. Active critical vulnerability CVE-2026-2149 was detected in the containerd runtime layer. Recommended mitigation is updating the node pool to image version v1.31.2-gke.1100, which patches the memory corruption vector.",
+      "expected_tool_calls": [
+        {
+          "tool_name": "scan_cluster_vulnerabilities",
+          "parameters": {
+            "cluster_id": "projects/riccardo-blog-test-v1/locations/us-central1/clusters/prod-us-central1",
+            "severity": "CRITICAL"
+          }
+        }
+      ],
+      "expected_response_substrings": [
+        "CVE-2026-2149",
+        "containerd runtime",
+        "v1.31.2-gke.1100"
+      ],
+      "forbidden_hallucinations": [
+        "CVE-2024-9999",
+        "Kubernetes 1.25",
+        "reboot host operating system manually"
+      ],
+      "mock_response": {
+        "content": "A scan of production cluster clusters/prod-us-central1 identified critical vulnerability CVE-2026-2149 affecting the containerd runtime layer. To mitigate this risk, upgrade the node pool to image version v1.31.2-gke.1100, which patches the memory corruption vector.",
+        "tool_calls": [
+          {
+            "tool_name": "scan_cluster_vulnerabilities",
+            "parameters": {
+              "cluster_id": "projects/riccardo-blog-test-v1/locations/us-central1/clusters/prod-us-central1",
+              "severity": "CRITICAL"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "SCENARIO-002",
+      "name": "DevSecOps Canary Deployment Progression",
+      "category": "DEVSECOPS",
+      "prompt": "Explain the verification criteria and automated progression rules from canary-25 to canary-50 in conductor-v3-pipeline.",
+      "reference_context": "The conductor-v3-pipeline in region us-central1 uses Cloud Deploy canary deployment strategy with phases canary-25 (25% traffic), canary-50 (50% traffic), and stable (100% traffic). Automation conductor-v3-pipeline/auto-advance-canary automatically advances rollout phases using advanceRolloutRule after the in-pipeline verify job completes successfully on the private worker pool cloudbuild-workerpool with a 600s execution timeout.",
+      "expected_tool_calls": [
+        {
+          "tool_name": "get_delivery_pipeline",
+          "parameters": {
+            "pipeline_name": "conductor-v3-pipeline",
+            "region": "us-central1"
+          }
+        }
+      ],
+      "expected_response_substrings": [
+        "conductor-v3-pipeline",
+        "canary-25",
+        "canary-50",
+        "auto-advance-canary",
+        "cloudbuild-workerpool"
+      ],
+      "forbidden_hallucinations": [
+        "Spinnaker",
+        "ArgoCD",
+        "canary-10",
+        "manual approval for canary-50"
+      ],
+      "mock_response": {
+        "content": "The conductor-v3-pipeline in us-central1 executes canary-25 followed by canary-50. Upon passing the in-pipeline verify job on private worker pool cloudbuild-workerpool within the 600s execution timeout, automation conductor-v3-pipeline/auto-advance-canary automatically advances rollout phases using advanceRolloutRule to canary-50.",
+        "tool_calls": [
+          {
+            "tool_name": "get_delivery_pipeline",
+            "parameters": {
+              "pipeline_name": "conductor-v3-pipeline",
+              "region": "us-central1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "SCENARIO-003",
+      "name": "SLSA Level 3 Provenance and Cosign Verification",
+      "category": "DEVSECOPS",
+      "prompt": "Verify the SLSA Level 3 provenance attestation and Cosign container signature for image conductor-v3 digest sha256:8f4c2e9b.",
+      "reference_context": "Conductor v3 enforces SLSA Level 3 build provenance. Cloud Build generates an in-toto attestation signed by Cloud KMS key conductor-attestor. The immutable container image digest sha256:8f4c2e9b is verified by Cosign against the public key before deployment to Google Cloud Run, ensuring zero tampering.",
+      "expected_tool_calls": [
+        {
+          "tool_name": "verify_container_provenance",
+          "parameters": {
+            "image_digest": "sha256:8f4c2e9b",
+            "attestation_type": "https://slsa.dev/provenance/v1"
+          }
+        }
+      ],
+      "expected_response_substrings": [
+        "SLSA Level 3",
+        "in-toto attestation",
+        "conductor-attestor",
+        "Cosign"
+      ],
+      "forbidden_hallucinations": [
+        "SLSA Level 1",
+        "unsigned binary",
+        "Docker Hub notary"
+      ],
+      "mock_response": {
+        "content": "Image digest sha256:8f4c2e9b possesses a verified SLSA Level 3 in-toto attestation signed by Cloud KMS key conductor-attestor. Cosign verified the signature before deployment to Google Cloud Run, guaranteeing provenance integrity.",
+        "tool_calls": [
+          {
+            "tool_name": "verify_container_provenance",
+            "parameters": {
+              "image_digest": "sha256:8f4c2e9b",
+              "attestation_type": "https://slsa.dev/provenance/v1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "SCENARIO-004",
+      "name": "Enterprise RAG Grounding with Cloud SQL pgvector",
+      "category": "ENTERPRISE_AI",
+      "prompt": "How does the Conductor v3 backend perform semantic similarity search against the genai-rag-db-859a1005 database?",
+      "reference_context": "Conductor v3 connects to Cloud SQL instance riccardo-blog-test-v1:us-central1:genai-rag-db-859a1005 over private VPC peering. The database uses pgvector with an HNSW cosine distance index. Embeddings are generated using text-embedding-005 with 768 dimensions, applying a similarity threshold cutoff of 0.78 for context retrieval.",
+      "expected_tool_calls": [
+        {
+          "tool_name": "query_rag_database_schema",
+          "parameters": {
+            "instance_connection_name": "riccardo-blog-test-v1:us-central1:genai-rag-db-859a1005"
+          }
+        }
+      ],
+      "expected_response_substrings": [
+        "genai-rag-db-859a1005",
+        "pgvector",
+        "HNSW",
+        "text-embedding-005",
+        "768 dimensions"
+      ],
+      "forbidden_hallucinations": [
+        "Pinecone",
+        "Milvus",
+        "1536 dimensions",
+        "OpenAI ada-002"
+      ],
+      "mock_response": {
+        "content": "Conductor v3 connects to Cloud SQL instance riccardo-blog-test-v1:us-central1:genai-rag-db-859a1005 using pgvector over private VPC peering. It queries an HNSW cosine distance index with 768 dimensions generated by text-embedding-005, enforcing a similarity threshold cutoff of 0.78.",
+        "tool_calls": [
+          {
+            "tool_name": "query_rag_database_schema",
+            "parameters": {
+              "instance_connection_name": "riccardo-blog-test-v1:us-central1:genai-rag-db-859a1005"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "SCENARIO-005",
+      "name": "Model Armor DLP Governance and Confidential Redaction",
+      "category": "DLP_GOVERNANCE",
+      "prompt": "Review the quarterly enterprise partner contract for ACME Corp with 45% discount rate and SSN 000-12-3456.",
+      "reference_context": "The Conductor v3 gateway routes all queries through Model Armor inspection template conductor-dlp-filter. Sensitive Personally Identifiable Information (SSN) is masked with [REDACTED_SSN] and confidential commercial discount terms exceeding standard tiers are sanitized to [CONFIDENTIAL_RATE] to prevent data leakage.",
+      "expected_tool_calls": [
+        {
+          "tool_name": "apply_model_armor_dlp",
+          "parameters": {
+            "template_id": "conductor-dlp-filter",
+            "risk_level": "STRICT"
+          }
+        }
+      ],
+      "expected_response_substrings": [
+        "Model Armor",
+        "[REDACTED_SSN]",
+        "[CONFIDENTIAL_RATE]"
+      ],
+      "forbidden_hallucinations": [
+        "000-12-3456",
+        "45%",
+        "unfiltered raw customer data"
+      ],
+      "mock_response": {
+        "content": "The Conductor v3 gateway routed the ACME Corp query through Model Armor inspection template conductor-dlp-filter. Sensitive Personally Identifiable Information is masked with [REDACTED_SSN] and confidential commercial discount terms are sanitized to [CONFIDENTIAL_RATE] to prevent data leakage.",
+        "tool_calls": [
+          {
+            "tool_name": "apply_model_armor_dlp",
+            "parameters": {
+              "template_id": "conductor-dlp-filter",
+              "risk_level": "STRICT"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "SCENARIO-006",
+      "name": "IAM Workload Identity and Service Account Governance",
+      "category": "SECURITY_IAM",
+      "prompt": "List the IAM permissions required by conductor-agent service account to invoke Vertex AI reasoning engine 1423301859237429248.",
+      "reference_context": "The service account conductor-agent@riccardo-blog-test-v1.iam.gserviceaccount.com requires roles/aiplatform.user on resource projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/1423301859237429248. In addition, Cloud Deploy execution requires roles/cloudbuild.workerPoolUser for cloudbuild-workerpool and roles/clouddeploy.jobRunner.",
+      "expected_tool_calls": [
+        {
+          "tool_name": "check_iam_permissions",
+          "parameters": {
+            "service_account": "conductor-agent@riccardo-blog-test-v1.iam.gserviceaccount.com",
+            "resource": "projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/1423301859237429248"
+          }
+        }
+      ],
+      "expected_response_substrings": [
+        "conductor-agent@riccardo-blog-test-v1.iam.gserviceaccount.com",
+        "roles/aiplatform.user",
+        "roles/cloudbuild.workerPoolUser",
+        "1423301859237429248"
+      ],
+      "forbidden_hallucinations": [
+        "roles/owner",
+        "roles/editor",
+        "full admin privileges"
+      ],
+      "mock_response": {
+        "content": "Service account conductor-agent@riccardo-blog-test-v1.iam.gserviceaccount.com requires roles/aiplatform.user on resource projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/1423301859237429248. Cloud Deploy execution requires roles/cloudbuild.workerPoolUser for cloudbuild-workerpool and roles/clouddeploy.jobRunner.",
+        "tool_calls": [
+          {
+            "tool_name": "check_iam_permissions",
+            "parameters": {
+              "service_account": "conductor-agent@riccardo-blog-test-v1.iam.gserviceaccount.com",
+              "resource": "projects/riccardo-blog-test-v1/locations/us-central1/reasoningEngines/1423301859237429248"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "SCENARIO-007",
+      "name": "Cloud Run Serverless Concurrency and Scale Governance",
+      "category": "INFRASTRUCTURE",
+      "prompt": "What are the autoscaling limits and container concurrency parameters configured for conductor-v3-prod?",
+      "reference_context": "Service conductor-v3-prod is deployed on Google Cloud Run in us-central1 with minScale 1, maxScale 20, containerConcurrency 100, CPU limit 1000m, memory limit 512Mi, and startup-cpu-boost enabled. CPU throttling is set to false to support background goroutine processing.",
+      "expected_tool_calls": [
+        {
+          "tool_name": "get_cloud_run_configuration",
+          "parameters": {
+            "service_name": "conductor-v3-prod",
+            "region": "us-central1"
+          }
+        }
+      ],
+      "expected_response_substrings": [
+        "conductor-v3-prod",
+        "minScale: 1",
+        "maxScale: 20",
+        "containerConcurrency: 100",
+        "startup-cpu-boost"
+      ],
+      "forbidden_hallucinations": [
+        "maxScale 100",
+        "GKE DaemonSet",
+        "concurrency 1000"
+      ],
+      "mock_response": {
+        "content": "Service conductor-v3-prod is deployed on Google Cloud Run in us-central1 with minScale: 1, maxScale: 20, containerConcurrency: 100, and startup-cpu-boost enabled. CPU limit is 1000m and memory limit is 512Mi.",
+        "tool_calls": [
+          {
+            "tool_name": "get_cloud_run_configuration",
+            "parameters": {
+              "service_name": "conductor-v3-prod",
+              "region": "us-central1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "SCENARIO-008",
+      "name": "Cloud KMS CMEK Envelope Key Rotation Governance",
+      "category": "SECURITY_IAM",
+      "prompt": "Check the rotation status and cryptokey version for Cloud Storage deploy artifacts bucket.",
+      "reference_context": "Cloud Storage bucket gs://us-central1.deploy-artifacts.riccardo-blog-test-v1.appspot.com is encrypted with Customer-Managed Encryption Key (CMEK) artifacts-cmek under key ring conductor-keyring in location us-central1. Key rotation is automated on a 90-day cycle, and version 4 is currently primary.",
+      "expected_tool_calls": [
+        {
+          "tool_name": "inspect_kms_key",
+          "parameters": {
+            "key_ring": "conductor-keyring",
+            "key_name": "artifacts-cmek",
+            "location": "us-central1"
+          }
+        }
+      ],
+      "expected_response_substrings": [
+        "conductor-keyring",
+        "artifacts-cmek",
+        "90-day",
+        "us-central1"
+      ],
+      "forbidden_hallucinations": [
+        "AWS KMS",
+        "unencrypted storage",
+        "manual rotation only"
+      ],
+      "mock_response": {
+        "content": "Cloud Storage bucket gs://us-central1.deploy-artifacts.riccardo-blog-test-v1.appspot.com is encrypted with Customer-Managed Encryption Key artifacts-cmek under key ring conductor-keyring in location us-central1 with automated 90-day key rotation cycle.",
+        "tool_calls": [
+          {
+            "tool_name": "inspect_kms_key",
+            "parameters": {
+              "key_ring": "conductor-keyring",
+              "key_name": "artifacts-cmek",
+              "location": "us-central1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "SCENARIO-009",
+      "name": "Multi-Agent Orchestration via Go ADK Coordinator",
+      "category": "ENTERPRISE_AI",
+      "prompt": "Route security incident INC-4921 to the forensic analysis agent and request an automated timeline.",
+      "reference_context": "The Go ADK platform coordinator acts as the primary orchestrator. When an incident like INC-4921 is submitted, the coordinator validates schema boundaries, initializes a persistent session context, and delegates task action generate_timeline to specialized worker forensic-analysis-agent.",
+      "expected_tool_calls": [
+        {
+          "tool_name": "delegate_agent_task",
+          "parameters": {
+            "incident_id": "INC-4921",
+            "target_agent": "forensic-analysis-agent",
+            "action": "generate_timeline"
+          }
+        }
+      ],
+      "expected_response_substrings": [
+        "INC-4921",
+        "forensic-analysis-agent",
+        "generate_timeline"
+      ],
+      "forbidden_hallucinations": [
+        "Jira webhook failure",
+        "PagerDuty escalation skipped",
+        "direct database delete"
+      ],
+      "mock_response": {
+        "content": "The Go ADK platform coordinator received security incident INC-4921, initialized a persistent session context, and delegated task action generate_timeline to specialized worker forensic-analysis-agent.",
+        "tool_calls": [
+          {
+            "tool_name": "delegate_agent_task",
+            "parameters": {
+              "incident_id": "INC-4921",
+              "target_agent": "forensic-analysis-agent",
+              "action": "generate_timeline"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "SCENARIO-010",
+      "name": "Cloud Audit Logs Compliance and BigQuery Streaming",
+      "category": "COMPLIANCE",
+      "prompt": "Verify that administrative write events for Vertex AI Reasoning Engines are streamed to BigQuery audit dataset.",
+      "reference_context": "Audit log sink audit-sink-reasoning-engines filters for resource.type=\"aiplatform.googleapis.com/ReasoningEngine\" and severity>=NOTICE. Destination is set to bigquery.googleapis.com/projects/riccardo-blog-test-v1/datasets/audit_logs_compliance with partitioned tables for SOC 2 Type II compliance.",
+      "expected_tool_calls": [
+        {
+          "tool_name": "verify_log_sink",
+          "parameters": {
+            "sink_name": "audit-sink-reasoning-engines",
+            "expected_destination": "bigquery.googleapis.com/projects/riccardo-blog-test-v1/datasets/audit_logs_compliance"
+          }
+        }
+      ],
+      "expected_response_substrings": [
+        "audit-sink-reasoning-engines",
+        "audit_logs_compliance",
+        "aiplatform.googleapis.com/ReasoningEngine",
+        "SOC 2 Type II"
+      ],
+      "forbidden_hallucinations": [
+        "Elasticsearch",
+        "Splunk Cloud",
+        "unfiltered stdout"
+      ],
+      "mock_response": {
+        "content": "Audit log sink audit-sink-reasoning-engines filters for resource.type=\"aiplatform.googleapis.com/ReasoningEngine\" and severity>=NOTICE. Destination is set to bigquery.googleapis.com/projects/riccardo-blog-test-v1/datasets/audit_logs_compliance with partitioned tables for SOC 2 Type II compliance.",
+        "tool_calls": [
+          {
+            "tool_name": "verify_log_sink",
+            "parameters": {
+              "sink_name": "audit-sink-reasoning-engines",
+              "expected_destination": "bigquery.googleapis.com/projects/riccardo-blog-test-v1/datasets/audit_logs_compliance"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "SCENARIO-011",
+      "name": "VPC Service Controls and Worker Pool Egress",
+      "category": "INFRASTRUCTURE",
+      "prompt": "Inspect the network egress path used by Cloud Deploy verify jobs executing on cloudbuild-workerpool.",
+      "reference_context": "Cloud Deploy runs verify workloads on private worker pool cloudbuild-workerpool located in us-central1. The pool is peered to VPC cloudbuild-worker-vpc with dedicated Cloud NAT egress, keeping all internal traffic off the public internet and complying with VPC Service Controls.",
+      "expected_tool_calls": [
+        {
+          "tool_name": "get_worker_pool_network",
+          "parameters": {
+            "worker_pool_id": "cloudbuild-workerpool",
+            "region": "us-central1"
+          }
+        }
+      ],
+      "expected_response_substrings": [
+        "cloudbuild-workerpool",
+        "cloudbuild-worker-vpc",
+        "Cloud NAT",
+        "VPC Service Controls"
+      ],
+      "forbidden_hallucinations": [
+        "public internet gateway",
+        "AWS Direct Connect",
+        "unpeered default bridge"
+      ],
+      "mock_response": {
+        "content": "Cloud Deploy runs verify workloads on private worker pool cloudbuild-workerpool in us-central1. The pool is peered to VPC cloudbuild-worker-vpc with dedicated Cloud NAT egress, satisfying VPC Service Controls requirements.",
+        "tool_calls": [
+          {
+            "tool_name": "get_worker_pool_network",
+            "parameters": {
+              "worker_pool_id": "cloudbuild-workerpool",
+              "region": "us-central1"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "scenario_id": "SCENARIO-012",
+      "name": "Automated Revision Rollback on Error Budget Depletion",
+      "category": "DEVSECOPS",
+      "prompt": "Describe how Cloud Deploy and Cloud Run execute an automated rollback if canary-25 HTTP 5xx error rate exceeds 1%.",
+      "reference_context": "Cloud Monitoring alerting policy canary-error-budget-depleted tracks HTTP 5xx response ratios on canary revisions. If the error rate exceeds 1% over a 3-minute window during canary-25, the policy triggers Cloud Deploy rollback automation, immediately routing 100% of traffic back to the previous stable revision.",
+      "expected_tool_calls": [
+        {
+          "tool_name": "get_alerting_policy",
+          "parameters": {
+            "policy_name": "canary-error-budget-depleted",
+            "target_service": "conductor-v3-prod"
+          }
+        }
+      ],
+      "expected_response_substrings": [
+        "canary-error-budget-depleted",
+        "canary-25",
+        "1%",
+        "rollback",
+        "stable revision"
+      ],
+      "forbidden_hallucinations": [
+        "manual approval required",
+        "delete entire service",
+        "restart virtual machine"
+      ],
+      "mock_response": {
+        "content": "Cloud Monitoring alerting policy canary-error-budget-depleted monitors canary revisions. If HTTP 5xx error rate exceeds 1% during canary-25, Cloud Deploy triggers automated rollback, immediately routing 100% of traffic back to the previous stable revision.",
+        "tool_calls": [
+          {
+            "tool_name": "get_alerting_policy",
+            "parameters": {
+              "policy_name": "canary-error-budget-depleted",
+              "target_service": "conductor-v3-prod"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
